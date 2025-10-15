@@ -182,10 +182,8 @@ def create_sprint_standup_embed(project, sprint, sprint_tasks, sprint_tasks_by_s
         "@everyone Hey team, this is your daily reminder to head to the most recent "
         "[Sprints page](https://discord.com/channels/1401686577629106246/1407869050050314311) "
         "and check in with the team. Please comment on the sprint post what you will get done today, "
-        "or if you are too busy, just let the team know you are not available today. Thank you!\n\n"
+        "or if you are too busy, just let the team know you are not available today. Thank you!"
     )
-    
-    description += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     
     fields = []
     
