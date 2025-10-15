@@ -9,12 +9,21 @@ TAIGA_PASSWORD = os.environ['TAIGA_PASSWORD']
 PROJECT_SLUG = os.environ['PROJECT_SLUG']
 DISCORD_WEBHOOK = os.environ['DISCORD_WEBHOOK']
 
-# Kanban columns in order - ALL will be shown even if empty
+# Kanban columns - these are your actual Taiga statuses
 KANBAN_COLUMNS = [
-    ('New', '🆕'),
-    ('Ready', '📋'),
+    ('Not Started', '⏸️'),
     ('In Progress', '🔄'),
-    ('Ready for test', '🧪'),
+    ('Ready for Test', '🧪'),
+    ('Ready for Review', '👀'),
+    ('Done', '✅'),
+]
+
+# Sprint/Scrum board columns
+SPRINT_COLUMNS = [
+    ('User Story', '📖'),
+    ('Information Needed', '❓'),
+    ('Not Started', '⏸️'),
+    ('In Progress', '🔄'),
     ('Done', '✅'),
 ]
 
@@ -41,8 +50,49 @@ def get_project_data(auth_token):
     response.raise_for_status()
     return response.json()
 
-def get_user_stories(auth_token, project_id):
-    """Get all user stories for the project"""
+def get_sprints(auth_token, project_id):
+    """Get all sprints (milestones) for the project"""
+    headers = {'Authorization': f'Bearer {auth_token}'}
+    response = requests.get(
+        f'{TAIGA_URL}/milestones?project={project_id}',
+        headers=headers
+    )
+    response.raise_for_status()
+    return response.json()
+
+def get_current_sprint(sprints):
+    """Get the current active sprint"""
+    now = datetime.now().date()
+    for sprint in sprints:
+        if sprint.get('estimated_start') and sprint.get('estimated_finish'):
+            start = datetime.fromisoformat(sprint['estimated_start'].replace('Z', '+00:00')).date()
+            end = datetime.fromisoformat(sprint['estimated_finish'].replace('Z', '+00:00')).date()
+            if start <= now <= end:
+                return sprint
+    
+    # If no active sprint, return the most recent one
+    if sprints:
+        sorted_sprints = sorted(sprints, key=lambda x: x.get('estimated_start', ''), reverse=True)
+        return sorted_sprints[0] if sorted_sprints else None
+    return None
+
+def get_user_stories(auth_token, project_id, milestone_id=None):
+    """Get user stories, optionally filtered by sprint/milestone"""
+    headers = {'Authorization': f'Bearer {auth_token}'}
+    params = {'project': project_id}
+    if milestone_id:
+        params['milestone'] = milestone_id
+    
+    response = requests.get(
+        f'{TAIGA_URL}/userstories',
+        headers=headers,
+        params=params
+    )
+    response.raise_for_status()
+    return response.json()
+
+def get_all_user_stories(auth_token, project_id):
+    """Get ALL user stories (for Kanban)"""
     headers = {'Authorization': f'Bearer {auth_token}'}
     response = requests.get(
         f'{TAIGA_URL}/userstories?project={project_id}',
@@ -74,10 +124,6 @@ def organize_stories_by_status(user_stories):
             status = status_info.get('name', 'Unknown')
         else:
             status = 'Unknown'
-        
-        # Normalize "In progress" vs "In Progress"
-        if status.lower() == 'in progress':
-            status = 'In Progress'
             
         if status not in stories_by_status:
             stories_by_status[status] = []
@@ -85,50 +131,29 @@ def organize_stories_by_status(user_stories):
     
     return stories_by_status
 
-def create_mega_standup_embed(project, user_stories, tasks, stories_by_status, tasks_by_story):
-    """Create ONE massive embed with everything"""
-    
-    project_url = project.get('url', f"https://tree.taiga.io/project/{PROJECT_SLUG}")
-    
-    # Calculate metrics
-    total_stories = len([s for s in user_stories if s is not None])
-    done_stories = len(stories_by_status.get('Done', []))
-    blocked_count = len(stories_by_status.get('Blocked', []))
-    
-    # Build the main description with overview
-    description = f"**{datetime.now().strftime('%A, %B %d, %Y')}** • [Open Project]({project_url})\n\n"
-    
-    # Add quick metrics line
-    completion = (done_stories / total_stories * 100) if total_stories > 0 else 0
-    health = "🟢" if blocked_count == 0 else "🟡" if blocked_count < 3 else "🔴"
-    description += f"{health} **{done_stories}/{total_stories}** complete ({completion:.0f}%) • "
-    if blocked_count > 0:
-        description += f"🚫 **{blocked_count}** blocked • "
-    description += f"📊 **{total_stories}** total stories\n\n"
-    description += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    
-    # Create kanban board fields - ALL COLUMNS, left to right, using inline
+def create_board_section(title, columns, stories_by_status, tasks_by_story):
+    """Create a kanban/sprint board section with fields"""
     fields = []
     
-    for status_name, emoji in KANBAN_COLUMNS:
+    for status_name, emoji in columns:
         stories = stories_by_status.get(status_name, [])
         count = len(stories)
         
-        # Build column content - make it MORE compact
+        # Build column content
         column_lines = []
         
-        # Show top 2 stories per column (less content = narrower)
-        for story in stories[:2]:
+        # Show top 3 stories per column
+        for story in stories[:3]:
             if story is None:
                 continue
             
             ref = story.get('ref', '')
-            subject = story.get('subject', 'No title')[:20]  # Shorter!
+            subject = story.get('subject', 'No title')[:25]
             
             # Get assignee username
             assigned_info = story.get('assigned_to_extra_info')
             if assigned_info and isinstance(assigned_info, dict):
-                assigned = assigned_info.get('username', '?')[:8]  # Max 8 chars
+                assigned = assigned_info.get('username', '?')
             else:
                 assigned = '?'
             
@@ -138,40 +163,112 @@ def create_mega_standup_embed(project, user_stories, tasks, stories_by_status, t
             if story_tasks:
                 completed = len([t for t in story_tasks if t.get('is_closed', False)])
                 total_t = len(story_tasks)
-                task_badge = f"`{completed}/{total_t}`"
+                task_badge = f" `{completed}/{total_t}`"
             
-            # More compact format
-            column_lines.append(f"**#{ref}** {task_badge}\n@{assigned}")
+            column_lines.append(f"**#{ref}** @{assigned}{task_badge}\n{subject}...")
         
-        if len(stories) > 2:
-            column_lines.append(f"*+{len(stories) - 2}*")
+        if len(stories) > 3:
+            column_lines.append(f"\n*+{len(stories) - 3} more*")
         
         # If empty column
         if not column_lines:
-            column_lines.append("*Empty*")
+            column_lines.append("*—*")
         
         column_value = "\n\n".join(column_lines)
         
-        # Shorter column headers
-        short_name = status_name.replace('Ready for test', 'Testing').replace('In Progress', 'In Prog')
-        
         fields.append({
-            "name": f"{emoji} {short_name} `{count}`",
+            "name": f"{emoji} {status_name} ({count})",
             "value": column_value,
-            "inline": True  # This makes them horizontal!
+            "inline": True
         })
     
-    # Add separator row (empty field to break to next line)
+    return fields
+
+def create_mega_standup_embed(project, sprint, sprint_stories, all_stories, tasks, sprint_stories_by_status, all_stories_by_status, tasks_by_story):
+    """Create ONE massive embed with both Sprint AND Kanban"""
+    
+    project_url = project.get('url', f"https://tree.taiga.io/project/{PROJECT_SLUG}")
+    
+    # Calculate metrics for sprint
+    sprint_total = len([s for s in sprint_stories if s is not None])
+    sprint_done = len(sprint_stories_by_status.get('Done', []))
+    
+    # Calculate metrics for kanban
+    kanban_total = len([s for s in all_stories if s is not None])
+    kanban_done = len(all_stories_by_status.get('Done', []))
+    
+    blocked_count = len(all_stories_by_status.get('Blocked', []))
+    
+    # Build the main description
+    sprint_name = sprint['name'] if sprint else 'No Active Sprint'
+    description = f"**{datetime.now().strftime('%A, %B %d, %Y')}** • [Open Project]({project_url})\n\n"
+    
+    # Sprint info
+    if sprint:
+        sprint_completion = (sprint_done / sprint_total * 100) if sprint_total > 0 else 0
+        description += f"🏃 **{sprint_name}**: {sprint_done}/{sprint_total} complete ({sprint_completion:.0f}%)\n"
+    
+    # Kanban info
+    kanban_completion = (kanban_done / kanban_total * 100) if kanban_total > 0 else 0
+    health = "🟢" if blocked_count == 0 else "🟡" if blocked_count < 3 else "🔴"
+    description += f"📋 **Kanban**: {kanban_done}/{kanban_total} complete ({kanban_completion:.0f}%) {health}\n"
+    
+    if blocked_count > 0:
+        description += f"🚫 **{blocked_count}** blocked items\n"
+    
+    description += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    fields = []
+    
+    # SPRINT BOARD SECTION
+    if sprint and sprint_total > 0:
+        fields.append({
+            "name": f"🏃 {sprint_name} (Sprint Board)",
+            "value": f"Active sprint with **{sprint_total}** stories",
+            "inline": False
+        })
+        
+        sprint_fields = create_board_section(
+            f"Sprint: {sprint_name}",
+            SPRINT_COLUMNS,
+            sprint_stories_by_status,
+            tasks_by_story
+        )
+        fields.extend(sprint_fields)
+        
+        # Separator
+        fields.append({
+            "name": "\u200B",
+            "value": "\u200B",
+            "inline": False
+        })
+    
+    # KANBAN BOARD SECTION
     fields.append({
-        "name": "\u200B",  # Zero-width space
+        "name": "📋 Kanban Board (All Work)",
+        "value": f"Overall project status with **{kanban_total}** stories",
+        "inline": False
+    })
+    
+    kanban_fields = create_board_section(
+        "Kanban Board",
+        KANBAN_COLUMNS,
+        all_stories_by_status,
+        tasks_by_story
+    )
+    fields.extend(kanban_fields)
+    
+    # Separator
+    fields.append({
+        "name": "\u200B",
         "value": "\u200B",
         "inline": False
     })
     
-    # Add BLOCKERS section if any (full width for visibility)
-    if 'Blocked' in stories_by_status and stories_by_status['Blocked']:
+    # BLOCKERS section if any
+    if 'Blocked' in all_stories_by_status and all_stories_by_status['Blocked']:
         blocker_lines = []
-        for story in stories_by_status['Blocked']:
+        for story in all_stories_by_status['Blocked'][:5]:
             if story is None:
                 continue
             ref = story.get('ref', '')
@@ -182,13 +279,13 @@ def create_mega_standup_embed(project, user_stories, tasks, stories_by_status, t
         
         fields.append({
             "name": "⚠️ BLOCKED - Needs Immediate Attention",
-            "value": "\n".join(blocker_lines[:5]),  # Top 5 blockers
+            "value": "\n".join(blocker_lines),
             "inline": False
         })
     
-    # Add team workload section (using inline for side-by-side)
+    # TEAM WORKLOAD section
     stories_by_user = {}
-    for story in user_stories:
+    for story in all_stories:
         if story is None:
             continue
         
@@ -208,7 +305,6 @@ def create_mega_standup_embed(project, user_stories, tasks, stories_by_status, t
             stories_by_user[user] = []
         stories_by_user[user].append(story)
     
-    # Add team members (inline for horizontal layout)
     team_count = 0
     for user, stories in sorted(stories_by_user.items()):
         if user == 'unassigned':
@@ -230,8 +326,6 @@ def create_mega_standup_embed(project, user_stories, tasks, stories_by_status, t
         for story in stories:
             status_info = story.get('status_extra_info', {})
             status = status_info.get('name', 'Unknown') if status_info else 'Unknown'
-            if status.lower() == 'in progress':
-                status = 'In Progress'
             
             for col_name, col_emoji in KANBAN_COLUMNS:
                 if status == col_name:
@@ -250,11 +344,11 @@ def create_mega_standup_embed(project, user_stories, tasks, stories_by_status, t
         if team_count % 3 == 0:
             fields.append({
                 "name": "\u200B",
-                "value": "\u200B", 
+                "value": "\u200B",
                 "inline": False
             })
     
-    # Add unassigned warning if needed
+    # Add unassigned warning
     if 'unassigned' in stories_by_user:
         count = len(stories_by_user['unassigned'])
         fields.append({
@@ -267,13 +361,13 @@ def create_mega_standup_embed(project, user_stories, tasks, stories_by_status, t
     return {
         "title": f"🌅 Daily Standup • {project['name']}",
         "description": description,
-        "color": 0x5865F2,  # Discord blurple
+        "color": 0x5865F2,
         "fields": fields,
         "thumbnail": {
             "url": "https://tree.taiga.io/images/logo-color.png"
         },
         "footer": {
-            "text": "📋 Kanban Board | 👥 Team Workload | Updated automatically",
+            "text": "🏃 Sprint Board | 📋 Kanban Board | 👥 Team Workload",
             "icon_url": "https://tree.taiga.io/images/logo-color.png"
         },
         "timestamp": datetime.now().isoformat()
@@ -295,8 +389,21 @@ def main():
         print("📊 Fetching project data...")
         project = get_project_data(auth_token)
         
-        print("📋 Fetching user stories...")
-        user_stories = get_user_stories(auth_token, project['id'])
+        print("🏃 Fetching sprints...")
+        sprints = get_sprints(auth_token, project['id'])
+        current_sprint = get_current_sprint(sprints)
+        
+        print(f"📋 Current sprint: {current_sprint['name'] if current_sprint else 'None'}")
+        
+        # Get sprint stories (if there's an active sprint)
+        sprint_stories = []
+        if current_sprint:
+            print("📋 Fetching sprint stories...")
+            sprint_stories = get_user_stories(auth_token, project['id'], current_sprint['id'])
+        
+        # Get ALL stories for Kanban
+        print("📋 Fetching all stories (Kanban)...")
+        all_stories = get_all_user_stories(auth_token, project['id'])
         
         print("✅ Fetching tasks...")
         tasks = get_tasks(auth_token, project['id'])
@@ -304,7 +411,8 @@ def main():
         print("🎨 Building mega standup embed...")
         
         # Organize data
-        stories_by_status = organize_stories_by_status(user_stories)
+        sprint_stories_by_status = organize_stories_by_status(sprint_stories)
+        all_stories_by_status = organize_stories_by_status(all_stories)
         
         # Organize tasks by story
         tasks_by_story = {}
@@ -319,10 +427,13 @@ def main():
         
         # Create the ONE mega embed
         mega_embed = create_mega_standup_embed(
-            project, 
-            user_stories, 
-            tasks, 
-            stories_by_status, 
+            project,
+            current_sprint,
+            sprint_stories,
+            all_stories,
+            tasks,
+            sprint_stories_by_status,
+            all_stories_by_status,
             tasks_by_story
         )
         
@@ -333,6 +444,8 @@ def main():
         
     except Exception as e:
         print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
         # Send error to Discord
         try:
             error_embed = {
