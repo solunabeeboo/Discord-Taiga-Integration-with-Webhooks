@@ -260,21 +260,44 @@ def create_metrics_embed(project, all_stories, all_tasks, all_stories_by_status,
     for status, stories in all_stories_by_status.items():
         print(f"  '{status}': {len(stories)} stories")
     
-    # Count stories by their actual status (handle different capitalizations)
-    def get_status_count(status_name):
-        """Get count for a status, checking multiple capitalizations"""
-        return (len(all_stories_by_status.get(status_name, [])) +
-                len(all_stories_by_status.get(status_name.upper(), [])) +
-                len(all_stories_by_status.get(status_name.lower(), [])))
+    # Since your Kanban might be tracking tasks instead of stories, let's count both
+    # Organize all tasks by status too
+    all_tasks_by_status = {}
+    for task in all_tasks:
+        if task is None:
+            continue
+        status_info = task.get('status_extra_info')
+        if status_info and isinstance(status_info, dict):
+            status = status_info.get('name', 'Unknown')
+        else:
+            status = 'Unknown'
+        if status not in all_tasks_by_status:
+            all_tasks_by_status[status] = []
+        all_tasks_by_status[status].append(task)
     
-    kanban_done = get_status_count('Done')
-    kanban_not_started = get_status_count('Not Started')
-    kanban_in_progress = get_status_count('In Progress')
-    kanban_ready_test = get_status_count('Ready for Test')
-    kanban_ready_review = get_status_count('Ready for Review')
-    blocked_count = get_status_count('Blocked')
+    print("📊 DEBUG - All task statuses found:")
+    for status, tasks in all_tasks_by_status.items():
+        print(f"  '{status}': {len(tasks)} tasks")
     
-    print(f"📊 DEBUG - Calculated counts:")
+    # Count items by their actual status (handle different capitalizations)
+    def get_status_count_combined(status_name):
+        """Get count for a status from both stories and tasks"""
+        story_count = (len(all_stories_by_status.get(status_name, [])) +
+                      len(all_stories_by_status.get(status_name.upper(), [])) +
+                      len(all_stories_by_status.get(status_name.lower(), [])))
+        task_count = (len(all_tasks_by_status.get(status_name, [])) +
+                     len(all_tasks_by_status.get(status_name.upper(), [])) +
+                     len(all_tasks_by_status.get(status_name.lower(), [])))
+        return story_count + task_count
+    
+    kanban_done = get_status_count_combined('Done')
+    kanban_not_started = get_status_count_combined('Not Started')
+    kanban_in_progress = get_status_count_combined('In Progress')
+    kanban_ready_test = get_status_count_combined('Ready for Test')
+    kanban_ready_review = get_status_count_combined('Ready for Review')
+    blocked_count = get_status_count_combined('Blocked')
+    
+    print(f"📊 DEBUG - Calculated counts (stories + tasks):")
     print(f"  Done: {kanban_done}")
     print(f"  Not Started: {kanban_not_started}")
     print(f"  In Progress: {kanban_in_progress}")
@@ -282,7 +305,7 @@ def create_metrics_embed(project, all_stories, all_tasks, all_stories_by_status,
     print(f"  Ready for Review: {kanban_ready_review}")
     print(f"  Blocked: {blocked_count}")
     
-    # Total active stories (everything not done)
+    # Total active items (everything not done)
     kanban_active = kanban_not_started + kanban_in_progress + kanban_ready_test + kanban_ready_review + blocked_count
     kanban_total = kanban_done + kanban_active
     
@@ -475,6 +498,18 @@ def main():
         all_tasks = get_all_tasks(auth_token, project['id'])
         
         print("🎨 Building standup embeds...")
+        
+        # DEBUG: Show ALL unique statuses before organizing
+        print("\n📊 DEBUG - RAW status names from ALL stories:")
+        unique_statuses = set()
+        for story in all_stories:
+            if story:
+                status_info = story.get('status_extra_info')
+                if status_info:
+                    status_name = status_info.get('name', 'NO_NAME')
+                    unique_statuses.add(f"'{status_name}'")
+        print(f"  Found these unique statuses: {sorted(unique_statuses)}")
+        print(f"  Total stories: {len([s for s in all_stories if s])}\n")
         
         # Organize data
         sprint_tasks_by_status = organize_tasks_by_status(sprint_tasks)
