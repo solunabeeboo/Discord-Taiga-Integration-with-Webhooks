@@ -1,6 +1,8 @@
 import os
 import requests
 from datetime import datetime
+from PIL import Image, ImageDraw, ImageFont
+import io
 
 # Configuration from environment variables
 TAIGA_URL = os.environ.get('TAIGA_URL', 'https://api.taiga.io/api/v1')
