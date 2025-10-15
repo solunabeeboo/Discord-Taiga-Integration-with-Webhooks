@@ -114,21 +114,21 @@ def create_mega_standup_embed(project, user_stories, tasks, stories_by_status, t
         stories = stories_by_status.get(status_name, [])
         count = len(stories)
         
-        # Build column content
+        # Build column content - make it MORE compact
         column_lines = []
         
-        # Show top 3 stories per column
-        for story in stories[:3]:
+        # Show top 2 stories per column (less content = narrower)
+        for story in stories[:2]:
             if story is None:
                 continue
             
             ref = story.get('ref', '')
-            subject = story.get('subject', 'No title')[:25]
+            subject = story.get('subject', 'No title')[:20]  # Shorter!
             
             # Get assignee username
             assigned_info = story.get('assigned_to_extra_info')
             if assigned_info and isinstance(assigned_info, dict):
-                assigned = assigned_info.get('username', '?')
+                assigned = assigned_info.get('username', '?')[:8]  # Max 8 chars
             else:
                 assigned = '?'
             
@@ -138,21 +138,25 @@ def create_mega_standup_embed(project, user_stories, tasks, stories_by_status, t
             if story_tasks:
                 completed = len([t for t in story_tasks if t.get('is_closed', False)])
                 total_t = len(story_tasks)
-                task_badge = f" `{completed}/{total_t}`"
+                task_badge = f"`{completed}/{total_t}`"
             
-            column_lines.append(f"**#{ref}** @{assigned}{task_badge}\n{subject}...")
+            # More compact format
+            column_lines.append(f"**#{ref}** {task_badge}\n@{assigned}")
         
-        if len(stories) > 3:
-            column_lines.append(f"\n*+{len(stories) - 3} more*")
+        if len(stories) > 2:
+            column_lines.append(f"*+{len(stories) - 2}*")
         
         # If empty column
         if not column_lines:
-            column_lines.append("*—*")
+            column_lines.append("*Empty*")
         
         column_value = "\n\n".join(column_lines)
         
+        # Shorter column headers
+        short_name = status_name.replace('Ready for test', 'Testing').replace('In Progress', 'In Prog')
+        
         fields.append({
-            "name": f"{emoji} {status_name} ({count})",
+            "name": f"{emoji} {short_name} `{count}`",
             "value": column_value,
             "inline": True  # This makes them horizontal!
         })
