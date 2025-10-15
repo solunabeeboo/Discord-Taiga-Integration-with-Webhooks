@@ -255,15 +255,17 @@ def create_sprint_standup_embed(project, sprint, sprint_tasks, sprint_tasks_by_s
 def create_metrics_embed(project, all_stories, all_tasks, all_stories_by_status, sprint, sprint_tasks):
     """Create SECOND embed with blockers, team workload, and metrics"""
     
-    kanban_total = len([s for s in all_stories if s is not None])
-    
-    # Count stories that are actually done (not just in "Done" status, but truly complete)
-    # Active statuses are everything except Done/Archived
-    active_statuses = ['Not Started', 'In Progress', 'Ready for Test', 'Ready for Review', 'Blocked']
-    kanban_active = sum(len(all_stories_by_status.get(status, [])) for status in active_statuses)
-    kanban_done = kanban_total - kanban_active
-    
+    # Count stories by their actual status
+    kanban_done = len(all_stories_by_status.get('Done', []))
+    kanban_not_started = len(all_stories_by_status.get('Not Started', []))
+    kanban_in_progress = len(all_stories_by_status.get('In Progress', []))
+    kanban_ready_test = len(all_stories_by_status.get('Ready for Test', []))
+    kanban_ready_review = len(all_stories_by_status.get('Ready for Review', []))
     blocked_count = len(all_stories_by_status.get('Blocked', []))
+    
+    # Total active stories (everything not done)
+    kanban_active = kanban_not_started + kanban_in_progress + kanban_ready_test + kanban_ready_review + blocked_count
+    kanban_total = kanban_done + kanban_active
     
     kanban_completion = (kanban_done / kanban_total * 100) if kanban_total > 0 else 0
     health = "🟢" if blocked_count == 0 else "🟡" if blocked_count < 3 else "🔴"
