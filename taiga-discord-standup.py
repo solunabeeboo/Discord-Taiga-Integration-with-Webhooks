@@ -168,22 +168,48 @@ def create_sprint_board_image(sprint_name, sprint_tasks_by_status, sprint_done, 
             if task is None:
                 continue
             
-            card_height = 85
+            # Get task info
+            ref = task.get('ref', '?')
+            subject = task.get('subject', 'No title')
+            assigned_info = task.get('assigned_to_extra_info')
+            assigned = assigned_info.get('username', 'Unassigned') if assigned_info and isinstance(assigned_info, dict) else 'Unassigned'
+            
+            # Calculate card height based on text length
+            # Wrap text to fit card width
+            max_chars_per_line = 45  # Approximate chars that fit
+            lines_needed = (len(subject) // max_chars_per_line) + 1
+            lines_needed = min(lines_needed, 3)  # Max 3 lines
+            
+            base_height = 60  # Base height for ref + assignee
+            text_height = lines_needed * 18  # 18px per line
+            card_height = base_height + text_height
+            
             # Card with subtle shadow effect
             draw.rounded_rectangle([x, card_y, x + column_width, card_y + card_height], radius=8, fill=card_bg)
             
             # Task reference - aligned nicely
-            ref = task.get('ref', '?')
             draw.text((x + 15, card_y + 10), f"#{ref}", fill=color, font=task_font)
             
-            # Task title - proper spacing
-            subject = task.get('subject', 'No title')[:32]
-            draw.text((x + 15, card_y + 34), subject, fill=text_color, font=small_font)
+            # Task title - wrap text properly
+            title_y = card_y + 34
+            current_line = ""
+            for word in subject.split():
+                test_line = current_line + " " + word if current_line else word
+                if len(test_line) <= max_chars_per_line:
+                    current_line = test_line
+                else:
+                    if current_line:
+                        draw.text((x + 15, title_y), current_line, fill=text_color, font=small_font)
+                        title_y += 18
+                    current_line = word
+            
+            # Draw remaining text
+            if current_line:
+                draw.text((x + 15, title_y), current_line, fill=text_color, font=small_font)
             
             # Assignee - bottom of card
-            assigned_info = task.get('assigned_to_extra_info')
-            assigned = assigned_info.get('username', 'Unassigned') if assigned_info and isinstance(assigned_info, dict) else 'Unassigned'
-            draw.text((x + 15, card_y + 60), f"@{assigned}", fill=text_secondary, font=small_font)
+            assignee_y = card_y + card_height - 25
+            draw.text((x + 15, assignee_y), f"@{assigned}", fill=text_secondary, font=small_font)
             
             card_y += card_height + 10
         
