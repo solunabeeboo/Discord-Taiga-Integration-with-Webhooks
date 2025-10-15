@@ -210,7 +210,7 @@ def create_sprint_standup_embed(project, sprint, sprint_tasks, sprint_tasks_by_s
         fields.append({
             "name": f"🏃 {sprint_name}",
             "value": (
-                #f"{progress_bar(sprint_completion)}\n"
+                f"{progress_bar(sprint_completion)}\n"
                 f"**{sprint_done}/{sprint_total}** tasks complete ({sprint_completion:.0f}%)\n\n"
                 f"⏸️ Not Started: **{not_started}** | "
                 f"🔄 In Progress: **{in_progress}** | "
@@ -234,17 +234,9 @@ def create_sprint_standup_embed(project, sprint, sprint_tasks, sprint_tasks_by_s
 # =============================================================================
 
 def send_to_discord_with_image(embeds, sprint_name, sprint_tasks_by_status, sprint_done, sprint_total):
-    """Send embed first, then image to Discord"""
+    """Send embed and image together in one message"""
     
     try:
-        # STEP 1: Send embed first
-        print("📨 Sending embed...")
-        response = requests.post(DISCORD_WEBHOOK, json={'content': '@everyone', 'embeds': embeds})
-        print(f"📬 Embed status: {response.status_code}")
-        response.raise_for_status()
-        print("✅ Embed sent!")
-        
-        # STEP 2: Generate and send image
         print("🎨 Generating image...")
         img = create_sprint_board_image(sprint_name, sprint_tasks_by_status, sprint_done, sprint_total)
         print(f"✅ Image created: {img.size[0]}x{img.size[1]} pixels")
@@ -256,22 +248,41 @@ def send_to_discord_with_image(embeds, sprint_name, sprint_tasks_by_status, spri
         file_size = len(img_bytes.getvalue())
         print(f"✅ File size: {file_size / 1024:.1f} KB")
         
-        print("📨 Sending image...")
+        print("📨 Sending embed + image together...")
+        
+        # Prepare files
         files = {'file': ('sprint_board.png', img_bytes, 'image/png')}
         
-        response = requests.post(DISCORD_WEBHOOK, files=files)
-        print(f"📬 Image status: {response.status_code}")
+        # Prepare payload with embed
+        payload = {
+            'content': '@everyone',
+            'embeds': embeds
+        }
+        
+        # Send as multipart with payload_json
+        data = {'payload_json': json.dumps(payload)}
+        
+        response = requests.post(DISCORD_WEBHOOK, data=data, files=files)
+        print(f"📬 Status: {response.status_code}")
         
         if response.status_code != 200:
             print(f"❌ Error response: {response.text}")
         
         response.raise_for_status()
-        print("✅ Image sent!")
+        print("✅ Sent successfully!")
         
     except Exception as e:
         print(f"❌ Send failed: {e}")
         import traceback
         traceback.print_exc()
+        print("⚠️ Trying fallback (embed only)...")
+        
+        try:
+            response = requests.post(DISCORD_WEBHOOK, json={'content': '@everyone', 'embeds': embeds})
+            response.raise_for_status()
+            print("✅ Embed sent (without image)")
+        except:
+            print("❌ Fallback also failed")
 
 # =============================================================================
 # MAIN
