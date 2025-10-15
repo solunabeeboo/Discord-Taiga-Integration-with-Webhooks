@@ -255,6 +255,11 @@ def create_sprint_standup_embed(project, sprint, sprint_tasks, sprint_tasks_by_s
 def create_metrics_embed(project, all_stories, all_tasks, all_stories_by_status, sprint, sprint_tasks):
     """Create SECOND embed with blockers, team workload, and metrics"""
     
+    # Debug: Print all statuses we found
+    print("📊 DEBUG - All story statuses found:")
+    for status, stories in all_stories_by_status.items():
+        print(f"  '{status}': {len(stories)} stories")
+    
     # Count stories by their actual status (handle different capitalizations)
     def get_status_count(status_name):
         """Get count for a status, checking multiple capitalizations"""
@@ -269,9 +274,19 @@ def create_metrics_embed(project, all_stories, all_tasks, all_stories_by_status,
     kanban_ready_review = get_status_count('Ready for Review')
     blocked_count = get_status_count('Blocked')
     
+    print(f"📊 DEBUG - Calculated counts:")
+    print(f"  Done: {kanban_done}")
+    print(f"  Not Started: {kanban_not_started}")
+    print(f"  In Progress: {kanban_in_progress}")
+    print(f"  Ready for Test: {kanban_ready_test}")
+    print(f"  Ready for Review: {kanban_ready_review}")
+    print(f"  Blocked: {blocked_count}")
+    
     # Total active stories (everything not done)
     kanban_active = kanban_not_started + kanban_in_progress + kanban_ready_test + kanban_ready_review + blocked_count
     kanban_total = kanban_done + kanban_active
+    
+    print(f"📊 DEBUG - Final totals: {kanban_done}/{kanban_total} done")
     
     kanban_completion = (kanban_done / kanban_total * 100) if kanban_total > 0 else 0
     health = "🟢" if blocked_count == 0 else "🟡" if blocked_count < 3 else "🔴"
