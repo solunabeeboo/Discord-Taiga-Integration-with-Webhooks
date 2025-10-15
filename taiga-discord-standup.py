@@ -281,7 +281,7 @@ def create_sprint_standup_embed(project, sprint, sprint_tasks, sprint_tasks_by_s
     # Add @everyone message
     description += (
         "@everyone Hey team, this is your daily reminder to head to the most recent "
-        "[daily standup page](https://discord.com/channels/1401686577629106246/1407869050050314311) "
+        "[Sprints page](https://discord.com/channels/1401686577629106246/1407869050050314311) "
         "and check in with the team. Please comment on the sprint post what you will get done today, "
         "or if you are too busy, just let the team know you are not available today. Thank you!\n\n"
     )
@@ -347,27 +347,27 @@ def create_kanban_and_metrics_embed(project, all_stories, all_tasks, all_stories
     
     fields = []
     
-    # KANBAN BOARD SECTION
-    fields.append({
-        "name": "📋 Kanban Board (All Work)",
-        "value": f"Overall project status with **{kanban_total}** stories",
-        "inline": False
-    })
-    
-    kanban_fields = create_story_board_section(
-        "Kanban Board",
-        KANBAN_COLUMNS,
-        all_stories_by_status,
-        tasks_by_story
-    )
-    fields.extend(kanban_fields)
+    # KANBAN BOARD SECTION - DISABLED FOR NOW
+    # fields.append({
+    #     "name": "📋 Kanban Board (All Work)",
+    #     "value": f"Overall project status with **{kanban_total}** stories",
+    #     "inline": False
+    # })
+    # 
+    # kanban_fields = create_story_board_section(
+    #     "Kanban Board",
+    #     KANBAN_COLUMNS,
+    #     all_stories_by_status,
+    #     tasks_by_story
+    # )
+    # fields.extend(kanban_fields)
     
     # Separator
-    fields.append({
-        "name": "\u200B",
-        "value": "\u200B",
-        "inline": False
-    })
+    # fields.append({
+    #     "name": "\u200B",
+    #     "value": "\u200B",
+    #     "inline": False
+    # })
     
     # BLOCKERS section if any
     if 'Blocked' in all_stories_by_status and all_stories_by_status['Blocked']:
@@ -510,12 +510,12 @@ def create_kanban_and_metrics_embed(project, all_stories, all_tasks, all_stories
     
     # Single embed with everything
     return {
-        "title": "📋 Kanban Board & Metrics",
+        "title": "📊 Team Metrics & Workload",
         "description": description,
         "color": 0x3498DB,
         "fields": fields,
         "footer": {
-            "text": "📋 Kanban Board | 👥 Team Workload | 📊 Metrics",
+            "text": "👥 Team Workload | 📊 Velocity Metrics",
         },
         "timestamp": datetime.now().isoformat()
     }
