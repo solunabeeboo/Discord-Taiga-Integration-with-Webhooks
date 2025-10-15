@@ -1,6 +1,8 @@
 import os
 import requests
 from datetime import datetime
+from PIL import Image, ImageDraw, ImageFont
+import io
 
 # Configuration from environment variables
 TAIGA_URL = os.environ.get('TAIGA_URL', 'https://api.taiga.io/api/v1')
@@ -187,6 +189,143 @@ def create_sprint_standup_embed(project, sprint, sprint_tasks, sprint_tasks_by_s
         "timestamp": datetime.now().isoformat()
     }
 
+def create_sprint_board_image(sprint_name, sprint_tasks_by_status, sprint_done, sprint_total):
+    """Create a beautiful visual sprint board image"""
+    
+    # Image dimensions
+    width = 1200
+    height = 800
+    
+    # Colors (modern, clean palette)
+    bg_color = (30, 33, 36)  # Dark background
+    card_bg = (47, 51, 56)   # Card background
+    not_started_color = (114, 137, 218)  # Blue
+    in_progress_color = (250, 166, 26)   # Orange
+    done_color = (67, 181, 129)          # Green
+    text_color = (255, 255, 255)         # White
+    text_secondary = (185, 187, 190)     # Gray
+    
+    # Create image
+    img = Image.new('RGB', (width, height), bg_color)
+    draw = ImageDraw.Draw(img)
+    
+    # Try to use a nice font, fallback to default
+    try:
+        title_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 42)
+        header_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 28)
+        task_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
+        small_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
+    except:
+        title_font = ImageFont.load_default()
+        header_font = ImageFont.load_default()
+        task_font = ImageFont.load_default()
+        small_font = ImageFont.load_default()
+    
+    # Draw title
+    title_text = f"🏃 {sprint_name}"
+    draw.text((40, 40), title_text, fill=text_color, font=title_font)
+    
+    # Draw progress
+    completion = (sprint_done / sprint_total * 100) if sprint_total > 0 else 0
+    progress_text = f"{sprint_done}/{sprint_total} tasks complete ({completion:.0f}%)"
+    draw.text((40, 95), progress_text, fill=text_secondary, font=small_font)
+    
+    # Progress bar
+    bar_x = 40
+    bar_y = 125
+    bar_width = 1120
+    bar_height = 20
+    
+    # Background bar
+    draw.rounded_rectangle(
+        [bar_x, bar_y, bar_x + bar_width, bar_y + bar_height],
+        radius=10,
+        fill=(60, 63, 68)
+    )
+    
+    # Progress bar fill
+    if sprint_total > 0:
+        fill_width = int((sprint_done / sprint_total) * bar_width)
+        if fill_width > 0:
+            draw.rounded_rectangle(
+                [bar_x, bar_y, bar_x + fill_width, bar_y + bar_height],
+                radius=10,
+                fill=done_color
+            )
+    
+    # Column setup
+    columns = [
+        ('Not Started', '⏸️', not_started_color),
+        ('In Progress', '🔄', in_progress_color),
+        ('Done', '✅', done_color)
+    ]
+    
+    column_width = 360
+    column_spacing = 20
+    start_y = 180
+    
+    # Draw columns
+    for idx, (status_name, emoji, color) in enumerate(columns):
+        x = 40 + (idx * (column_width + column_spacing))
+        
+        # Column header
+        draw.rounded_rectangle(
+            [x, start_y, x + column_width, start_y + 60],
+            radius=12,
+            fill=color
+        )
+        
+        tasks = sprint_tasks_by_status.get(status_name, [])
+        count = len(tasks)
+        
+        header_text = f"{emoji} {status_name}"
+        draw.text((x + 20, start_y + 12), header_text, fill=(255, 255, 255), font=header_font)
+        
+        count_text = f"{count} tasks"
+        draw.text((x + 20, start_y + 45), count_text, fill=(255, 255, 255), font=small_font)
+        
+        # Draw task cards
+        card_y = start_y + 80
+        for task_idx, task in enumerate(tasks[:5]):  # Max 5 tasks per column
+            if task is None:
+                continue
+            
+            # Task card background
+            card_height = 90
+            draw.rounded_rectangle(
+                [x, card_y, x + column_width, card_y + card_height],
+                radius=8,
+                fill=card_bg
+            )
+            
+            # Task reference
+            ref = task.get('ref', '?')
+            ref_text = f"#{ref}"
+            draw.text((x + 15, card_y + 12), ref_text, fill=color, font=task_font)
+            
+            # Task title (truncated)
+            subject = task.get('subject', 'No title')[:30]
+            draw.text((x + 15, card_y + 38), subject, fill=text_color, font=small_font)
+            
+            # Assignee
+            assigned_info = task.get('assigned_to_extra_info')
+            if assigned_info and isinstance(assigned_info, dict):
+                assigned = assigned_info.get('username', 'Unassigned')
+            else:
+                assigned = 'Unassigned'
+            
+            assignee_text = f"@{assigned}"
+            draw.text((x + 15, card_y + 62), assignee_text, fill=text_secondary, font=small_font)
+            
+            card_y += card_height + 12
+        
+        # Show "X more" if needed
+        if len(tasks) > 5:
+            more_text = f"+{len(tasks) - 5} more tasks"
+            draw.text((x + 15, card_y), more_text, fill=text_secondary, font=small_font)
+    
+    return img
+
 def send_to_discord(embeds):
     """Send embeds to Discord via webhook with @everyone ping"""
     response = requests.post(
@@ -222,6 +361,9 @@ def main():
         print("🎨 Building standup embed...")
         sprint_tasks_by_status = organize_tasks_by_status(sprint_tasks)
         
+        sprint_done = len(sprint_tasks_by_status.get('Done', []))
+        sprint_total = len([t for t in sprint_tasks if t is not None])
+        
         sprint_embed = create_sprint_standup_embed(
             project,
             current_sprint,
@@ -230,7 +372,13 @@ def main():
         )
         
         print("📨 Sending to Discord...")
-        send_to_discord([sprint_embed])
+        send_to_discord_with_image(
+            [sprint_embed],
+            current_sprint['name'],
+            sprint_tasks_by_status,
+            sprint_done,
+            sprint_total
+        )
         
         print("✅ Standup sent successfully!")
         
@@ -244,6 +392,7 @@ def main():
                 "description": f"```{str(e)}```",
                 "color": 0xE74C3C
             }
+            # Use simple send for errors
             send_to_discord([error_embed])
         except:
             pass
