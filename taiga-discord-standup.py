@@ -76,10 +76,10 @@ def get_status_color(status_name):
         'Archived': 0x7F8C8D,      # Dark Gray
         'Blocked': 0xE74C3C,       # Red
     }
-    return colors.get(status_name, 0x34495E)  # Default dark blue
+    return colors.get(status_name, 0x34495E)
 
-def create_kanban_embeds(project, user_stories, tasks):
-    """Create Discord embeds that look like a kanban board"""
+def create_horizontal_kanban_embed(project, user_stories, tasks):
+    """Create a single embed with horizontal-style kanban columns using inline fields"""
     
     # Filter and organize stories by status
     stories_by_status = {}
@@ -108,88 +108,73 @@ def create_kanban_embeds(project, user_stories, tasks):
                 tasks_by_story[story_id] = []
             tasks_by_story[story_id].append(task)
     
-    # Create main header embed
-    project_url = project.get('url', f"https://tree.taiga.io/project/{PROJECT_SLUG}")
+    # Create fields for each status column (inline = True makes them side-by-side)
+    fields = []
     
-    embeds = [{
-        "title": "🌅 Daily Standup",
-        "description": f"**{project['name']}**\n{datetime.now().strftime('%A, %B %d, %Y')}",
-        "color": 0x5865F2,  # Discord Blurple
-        "url": project_url,
-        "thumbnail": {
-            "url": "https://tree.taiga.io/images/logo-color.png"
-        },
-        "footer": {
-            "text": f"Total Stories: {len([s for s in user_stories if s is not None])}"
-        }
-    }]
+    # Define the order of statuses for workflow
+    status_order = ['New', 'Ready', 'In progress', 'In Progress', 'Ready for test', 'Blocked', 'Done']
     
-    # Create an embed for each status column (like kanban columns)
-    for status, stories in sorted(stories_by_status.items()):
-        if not stories:
+    for status in status_order:
+        if status not in stories_by_status:
             continue
             
+        stories = stories_by_status[status]
         emoji = STATUS_EMOJIS.get(status, '📌')
         
-        # Build the fields for this status
-        fields = []
-        
-        for story in stories[:10]:  # Limit to 10 per status
+        # Build compact story list for this column
+        story_lines = []
+        for story in stories[:4]:  # Max 4 per column for horizontal layout
             if story is None:
                 continue
             
-            subject = story.get('subject', 'No title')
+            subject = story.get('subject', 'No title')[:25]  # Shorter for horizontal
             story_ref = story.get('ref', '')
             
-            # Get assigned user
+            # Get assigned user (just first name or initials)
             assigned_info = story.get('assigned_to_extra_info')
             if assigned_info and isinstance(assigned_info, dict):
-                assigned = assigned_info.get('full_name_display', 'Unassigned')
+                full_name = assigned_info.get('full_name_display', '?')
+                # Get first name or initials
+                assigned = full_name.split()[0] if full_name else '?'
             else:
-                assigned = 'Unassigned'
+                assigned = '?'
             
-            # Get story tasks
+            # Task progress
             story_tasks = tasks_by_story.get(story.get('id'), [])
-            tasks_info = ""
+            task_indicator = ""
             if story_tasks:
-                completed_tasks = len([t for t in story_tasks if t.get('is_closed', False)])
-                total_tasks = len(story_tasks)
-                tasks_info = f"\n└ Tasks: {completed_tasks}/{total_tasks} ✓"
+                completed = len([t for t in story_tasks if t.get('is_closed', False)])
+                total = len(story_tasks)
+                task_indicator = f" `{completed}/{total}`"
             
-            # Create story field
-            story_title = f"#{story_ref} {subject[:50]}" if story_ref else subject[:50]
-            story_value = f"👤 {assigned}{tasks_info}"
-            
-            fields.append({
-                "name": story_title,
-                "value": story_value,
-                "inline": False
-            })
+            story_lines.append(f"**#{story_ref}** {assigned}{task_indicator}\n{subject}...")
         
-        # Add "and X more" if there are too many
-        if len(stories) > 10:
-            fields.append({
-                "name": "➕ More items",
-                "value": f"... and {len(stories) - 10} more stories",
-                "inline": False
-            })
+        if len(stories) > 4:
+            story_lines.append(f"*+{len(stories) - 4} more*")
         
-        # Create the status embed
-        embed = {
-            "title": f"{emoji} {status}",
-            "color": get_status_color(status),
-            "fields": fields,
-            "footer": {
-                "text": f"{len(stories)} {'story' if len(stories) == 1 else 'stories'}"
-            }
-        }
+        column_value = "\n\n".join(story_lines) if story_lines else "*Empty*"
         
-        embeds.append(embed)
+        fields.append({
+            "name": f"{emoji} **{status}** ({len(stories)})",
+            "value": column_value,
+            "inline": True  # This makes columns appear side-by-side
+        })
     
-    return embeds
+    project_url = project.get('url', f"https://tree.taiga.io/project/{PROJECT_SLUG}")
+    
+    return {
+        "title": "📊 Kanban Board",
+        "description": f"**{project['name']}** • {datetime.now().strftime('%B %d, %Y')}",
+        "url": project_url,
+        "color": 0x5865F2,
+        "fields": fields,
+        "footer": {
+            "text": f"💡 Tip: Scroll right to see all columns"
+        }
+    }
 
-def create_team_summary_embed(user_stories):
-    """Create a summary showing what each team member is working on"""
+def create_team_workload_embed(user_stories, tasks):
+    """Create team workload breakdown with inline fields"""
     
     # Group by assigned user
     stories_by_user = {}
@@ -204,7 +189,7 @@ def create_team_summary_embed(user_stories):
         else:
             user = 'Unassigned'
         
-        # Only count non-done stories
+        # Only count active stories
         status_info = story.get('status_extra_info', {})
         status = status_info.get('name', '') if status_info else ''
         
@@ -213,42 +198,117 @@ def create_team_summary_embed(user_stories):
                 stories_by_user[user] = []
             stories_by_user[user].append(story)
     
-    # Create fields for each user
+    # Create inline fields for each person
     fields = []
     for user, stories in sorted(stories_by_user.items()):
         if user == 'Unassigned':
             continue
-            
-        story_list = []
-        for story in stories[:3]:  # Show top 3 per person
+        
+        # Count by status
+        status_counts = {}
+        for story in stories:
             status_info = story.get('status_extra_info', {})
             status = status_info.get('name', 'Unknown') if status_info else 'Unknown'
             emoji = STATUS_EMOJIS.get(status, '📌')
-            subject = story.get('subject', 'No title')[:40]
-            story_list.append(f"{emoji} {subject}")
+            status_counts[emoji] = status_counts.get(emoji, 0) + 1
         
-        if len(stories) > 3:
-            story_list.append(f"*+{len(stories) - 3} more*")
+        status_breakdown = " • ".join([f"{emoji} {count}" for emoji, count in status_counts.items()])
         
         fields.append({
             "name": f"👤 {user}",
-            "value": "\n".join(story_list) if story_list else "No active tasks",
+            "value": f"**{len(stories)}** active\n{status_breakdown}",
             "inline": True
         })
     
-    # Add unassigned if any
+    # Add unassigned
     if 'Unassigned' in stories_by_user:
         unassigned_count = len(stories_by_user['Unassigned'])
         fields.append({
             "name": "⚠️ Unassigned",
-            "value": f"{unassigned_count} {'story needs' if unassigned_count == 1 else 'stories need'} assignment",
+            "value": f"**{unassigned_count}** {'story' if unassigned_count == 1 else 'stories'}",
             "inline": True
         })
     
     return {
         "title": "👥 Team Workload",
-        "color": 0xFEE75C,  # Yellow
+        "color": 0xFEE75C,
         "fields": fields
+    }
+
+def create_metrics_embed(user_stories, tasks):
+    """Create project metrics and insights"""
+    
+    total_stories = len([s for s in user_stories if s is not None])
+    total_tasks = len([t for t in tasks if t is not None])
+    
+    # Calculate completion stats
+    done_stories = 0
+    in_progress_stories = 0
+    blocked_stories = 0
+    completed_tasks = 0
+    
+    for story in user_stories:
+        if story is None:
+            continue
+        status_info = story.get('status_extra_info', {})
+        status = status_info.get('name', '') if status_info else ''
+        
+        if status == 'Done':
+            done_stories += 1
+        elif status in ['In progress', 'In Progress']:
+            in_progress_stories += 1
+        elif status == 'Blocked':
+            blocked_stories += 1
+    
+    for task in tasks:
+        if task and task.get('is_closed', False):
+            completed_tasks += 1
+    
+    # Calculate percentages
+    story_completion = (done_stories / total_stories * 100) if total_stories > 0 else 0
+    task_completion = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+    
+    # Create progress bars
+    def progress_bar(percentage, length=10):
+        filled = int(percentage / 10)
+        return '█' * filled + '░' * (length - filled)
+    
+    fields = [
+        {
+            "name": "📈 Story Progress",
+            "value": f"{progress_bar(story_completion)}\n**{done_stories}/{total_stories}** complete ({story_completion:.0f}%)",
+            "inline": True
+        },
+        {
+            "name": "✓ Task Progress",
+            "value": f"{progress_bar(task_completion)}\n**{completed_tasks}/{total_tasks}** complete ({task_completion:.0f}%)",
+            "inline": True
+        },
+        {
+            "name": "🔄 Active Work",
+            "value": f"**{in_progress_stories}** in progress\n**{blocked_stories}** blocked",
+            "inline": True
+        }
+    ]
+    
+    return {
+        "title": "📊 Project Metrics",
+        "color": 0x5865F2,
+        "fields": fields
+    }
+
+def create_header_embed(project):
+    """Create beautiful header"""
+    project_url = project.get('url', f"https://tree.taiga.io/project/{PROJECT_SLUG}")
+    
+    return {
+        "title": "🌅 Daily Standup",
+        "description": f"## {project['name']}\n{datetime.now().strftime('%A, %B %d, %Y')}",
+        "color": 0x5865F2,
+        "url": project_url,
+        "thumbnail": {
+            "url": "https://tree.taiga.io/images/logo-color.png"
+        }
     }
 
 def send_to_discord(embeds):
@@ -273,15 +333,22 @@ def main():
         print("✅ Fetching tasks...")
         tasks = get_tasks(auth_token, project['id'])
         
-        print("✍️ Creating kanban board embeds...")
-        kanban_embeds = create_kanban_embeds(project, user_stories, tasks)
+        print("✍️ Creating layered standup...")
         
-        print("👥 Creating team summary...")
-        team_embed = create_team_summary_embed(user_stories)
+        # Layer 1: Header
+        header = create_header_embed(project)
         
-        # Combine all embeds (Discord allows up to 10 embeds per message)
-        all_embeds = kanban_embeds[:9]  # Leave room for team summary
-        all_embeds.append(team_embed)
+        # Layer 2: Horizontal Kanban Board
+        kanban = create_horizontal_kanban_embed(project, user_stories, tasks)
+        
+        # Layer 3: Team Workload (side-by-side people)
+        workload = create_team_workload_embed(user_stories, tasks)
+        
+        # Layer 4: Metrics Dashboard
+        metrics = create_metrics_embed(user_stories, tasks)
+        
+        # Combine in layers
+        all_embeds = [header, kanban, workload, metrics]
         
         print("📨 Sending to Discord...")
         send_to_discord(all_embeds)
