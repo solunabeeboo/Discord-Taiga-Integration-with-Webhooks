@@ -177,7 +177,7 @@ def create_sprint_board_image(sprint_name, sprint_tasks_by_status, sprint_done, 
 # =============================================================================
 
 def create_sprint_standup_embed(project, sprint, sprint_tasks, sprint_tasks_by_status):
-    """Create Discord embed"""
+    """Create Discord embed with just sprint progress"""
     
     project_url = project.get('url', f"https://tree.taiga.io/project/{PROJECT_SLUG}")
     sprint_total = len([t for t in sprint_tasks if t is not None])
@@ -192,43 +192,32 @@ def create_sprint_standup_embed(project, sprint, sprint_tasks, sprint_tasks_by_s
         "or if you are too busy, just let the team know you are not available today. Thank you!"
     )
     
+    # Only show sprint progress, no task details
     fields = []
     
     if sprint and sprint_total > 0:
         sprint_completion = (sprint_done / sprint_total * 100) if sprint_total > 0 else 0
+        
+        # Progress bar
+        def progress_bar(percentage, length=15):
+            filled = int(percentage / (100 / length))
+            return '█' * filled + '░' * (length - filled)
+        
+        # Count by status
+        not_started = len(sprint_tasks_by_status.get('Not Started', []))
+        in_progress = len(sprint_tasks_by_status.get('In Progress', []))
+        
         fields.append({
-            "name": f"🏃 {sprint_name} - {sprint_done}/{sprint_total} tasks complete ({sprint_completion:.0f}%)",
-            "value": f"Active sprint with **{sprint_total}** tasks",
+            "name": f"🏃 {sprint_name}",
+            "value": (
+                f"{progress_bar(sprint_completion)}\n"
+                f"**{sprint_done}/{sprint_total}** tasks complete ({sprint_completion:.0f}%)\n\n"
+                f"⏸️ Not Started: **{not_started}** | "
+                f"🔄 In Progress: **{in_progress}** | "
+                f"✅ Done: **{sprint_done}**"
+            ),
             "inline": False
         })
-        
-        for status_name, emoji in SPRINT_COLUMNS:
-            tasks = sprint_tasks_by_status.get(status_name, [])
-            count = len(tasks)
-            column_lines = []
-            
-            for task in tasks[:3]:
-                if task is None:
-                    continue
-                ref = task.get('ref', '')
-                subject = task.get('subject', 'No title')[:25]
-                assigned_info = task.get('assigned_to_extra_info')
-                assigned = assigned_info.get('username', '?') if assigned_info and isinstance(assigned_info, dict) else '?'
-                us_ref = ""
-                if task.get('user_story_extra_info'):
-                    us_ref = f" (US#{task['user_story_extra_info'].get('ref', '')})"
-                column_lines.append(f"**#{ref}** @{assigned}{us_ref}\n{subject}...")
-            
-            if len(tasks) > 3:
-                column_lines.append(f"\n*+{len(tasks) - 3} more*")
-            if not column_lines:
-                column_lines.append("*—*")
-            
-            fields.append({
-                "name": f"{emoji} {status_name} ({count})",
-                "value": "\n\n".join(column_lines),
-                "inline": True
-            })
     
     return {
         "title": f"🌅 Daily Standup • {project['name']}",
@@ -236,7 +225,7 @@ def create_sprint_standup_embed(project, sprint, sprint_tasks, sprint_tasks_by_s
         "color": 0x5865F2,
         "fields": fields,
         "thumbnail": {"url": "https://tree.taiga.io/images/logo-color.png"},
-        "footer": {"text": "🏃 Sprint Tasks Board", "icon_url": "https://tree.taiga.io/images/logo-color.png"},
+        "footer": {"text": "🏃 Sprint Tasks Board • See visual board below", "icon_url": "https://tree.taiga.io/images/logo-color.png"},
         "timestamp": datetime.now().isoformat()
     }
 
@@ -245,9 +234,17 @@ def create_sprint_standup_embed(project, sprint, sprint_tasks, sprint_tasks_by_s
 # =============================================================================
 
 def send_to_discord_with_image(embeds, sprint_name, sprint_tasks_by_status, sprint_done, sprint_total):
-    """Send image + embed to Discord"""
+    """Send embed first, then image to Discord"""
     
     try:
+        # STEP 1: Send embed first
+        print("📨 Sending embed...")
+        response = requests.post(DISCORD_WEBHOOK, json={'content': '@everyone', 'embeds': embeds})
+        print(f"📬 Embed status: {response.status_code}")
+        response.raise_for_status()
+        print("✅ Embed sent!")
+        
+        # STEP 2: Generate and send image
         print("🎨 Generating image...")
         img = create_sprint_board_image(sprint_name, sprint_tasks_by_status, sprint_done, sprint_total)
         print(f"✅ Image created: {img.size[0]}x{img.size[1]} pixels")
@@ -259,29 +256,22 @@ def send_to_discord_with_image(embeds, sprint_name, sprint_tasks_by_status, spri
         file_size = len(img_bytes.getvalue())
         print(f"✅ File size: {file_size / 1024:.1f} KB")
         
-        print("📨 Sending to Discord...")
+        print("📨 Sending image...")
         files = {'file': ('sprint_board.png', img_bytes, 'image/png')}
-        payload = {'content': '@everyone', 'embeds': embeds}
-        data = {'payload_json': json.dumps(payload)}
         
-        response = requests.post(DISCORD_WEBHOOK, data=data, files=files)
-        print(f"📬 Status: {response.status_code}")
+        response = requests.post(DISCORD_WEBHOOK, files=files)
+        print(f"📬 Image status: {response.status_code}")
         
         if response.status_code != 200:
             print(f"❌ Error response: {response.text}")
         
         response.raise_for_status()
-        print("✅ Sent successfully!")
+        print("✅ Image sent!")
         
     except Exception as e:
-        print(f"❌ Image send failed: {e}")
+        print(f"❌ Send failed: {e}")
         import traceback
         traceback.print_exc()
-        print("⚠️ Falling back to embed only...")
-        
-        # Fallback: send just embed
-        response = requests.post(DISCORD_WEBHOOK, json={'content': '@everyone', 'embeds': embeds})
-        response.raise_for_status()
 
 # =============================================================================
 # MAIN
