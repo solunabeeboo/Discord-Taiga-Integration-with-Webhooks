@@ -9,16 +9,7 @@ TAIGA_PASSWORD = os.environ['TAIGA_PASSWORD']
 PROJECT_SLUG = os.environ['PROJECT_SLUG']
 DISCORD_WEBHOOK = os.environ['DISCORD_WEBHOOK']
 
-# Kanban columns - these are your actual Taiga statuses
-KANBAN_COLUMNS = [
-    ('Not Started', '⏸️'),
-    ('In Progress', '🔄'),
-    ('Ready for Test', '🧪'),
-    ('Ready for Review', '👀'),
-    ('Done', '✅'),
-]
-
-# Sprint/Scrum board columns - only task statuses
+# Sprint task status columns
 SPRINT_COLUMNS = [
     ('Not Started', '⏸️'),
     ('In Progress', '🔄'),
@@ -59,7 +50,7 @@ def get_sprints(auth_token, project_id):
     return response.json()
 
 def get_current_sprint(sprints):
-    """Get the current active sprint"""
+    """Get the current active sprint based on date range"""
     now = datetime.now().date()
     for sprint in sprints:
         if sprint.get('estimated_start') and sprint.get('estimated_finish'):
@@ -74,37 +65,10 @@ def get_current_sprint(sprints):
         return sorted_sprints[0] if sorted_sprints else None
     return None
 
-def get_user_stories(auth_token, project_id, milestone_id=None):
-    """Get user stories, optionally filtered by sprint/milestone"""
+def get_sprint_tasks(auth_token, project_id, milestone_id):
+    """Get tasks for a specific sprint"""
     headers = {'Authorization': f'Bearer {auth_token}'}
-    params = {'project': project_id}
-    if milestone_id:
-        params['milestone'] = milestone_id
-    
-    response = requests.get(
-        f'{TAIGA_URL}/userstories',
-        headers=headers,
-        params=params
-    )
-    response.raise_for_status()
-    return response.json()
-
-def get_all_user_stories(auth_token, project_id):
-    """Get ALL user stories (for Kanban)"""
-    headers = {'Authorization': f'Bearer {auth_token}'}
-    response = requests.get(
-        f'{TAIGA_URL}/userstories?project={project_id}',
-        headers=headers
-    )
-    response.raise_for_status()
-    return response.json()
-
-def get_tasks(auth_token, project_id, milestone_id=None):
-    """Get tasks, optionally filtered by sprint/milestone"""
-    headers = {'Authorization': f'Bearer {auth_token}'}
-    params = {'project': project_id}
-    if milestone_id:
-        params['milestone'] = milestone_id
+    params = {'project': project_id, 'milestone': milestone_id}
     
     response = requests.get(
         f'{TAIGA_URL}/tasks',
@@ -114,18 +78,8 @@ def get_tasks(auth_token, project_id, milestone_id=None):
     response.raise_for_status()
     return response.json()
 
-def get_all_tasks(auth_token, project_id):
-    """Get ALL tasks"""
-    headers = {'Authorization': f'Bearer {auth_token}'}
-    response = requests.get(
-        f'{TAIGA_URL}/tasks?project={project_id}',
-        headers=headers
-    )
-    response.raise_for_status()
-    return response.json()
-
 def organize_tasks_by_status(tasks):
-    """Organize tasks by status"""
+    """Organize tasks by their status"""
     tasks_by_status = {}
     
     for task in tasks:
@@ -144,40 +98,18 @@ def organize_tasks_by_status(tasks):
     
     return tasks_by_status
 
-def organize_stories_by_status(user_stories):
-    """Organize stories by status"""
-    stories_by_status = {}
-    
-    for story in user_stories:
-        if story is None:
-            continue
-            
-        status_info = story.get('status_extra_info')
-        if status_info and isinstance(status_info, dict):
-            status = status_info.get('name', 'Unknown')
-        else:
-            status = 'Unknown'
-            
-        if status not in stories_by_status:
-            stories_by_status[status] = []
-        stories_by_status[status].append(story)
-    
-    return stories_by_status
-
 def create_sprint_standup_embed(project, sprint, sprint_tasks, sprint_tasks_by_status):
-    """Create FIRST embed with Sprint board and team message"""
+    """Create the daily standup embed with sprint tasks"""
     
     project_url = project.get('url', f"https://tree.taiga.io/project/{PROJECT_SLUG}")
     
     # Calculate sprint metrics
     sprint_total = len([t for t in sprint_tasks if t is not None])
     sprint_done = len(sprint_tasks_by_status.get('Done', []))
-    
-    # Build the main description
     sprint_name = sprint['name'] if sprint else 'No Active Sprint'
-    description = f"**{datetime.now().strftime('%A, %B %d, %Y')}** • [Open Project]({project_url})\n\n"
     
-    # Add @everyone message
+    # Build description with team message
+    description = f"**{datetime.now().strftime('%A, %B %d, %Y')}** • [Open Project]({project_url})\n\n"
     description += (
         "@everyone Hey team, this is your daily reminder to head to the most recent "
         "[Sprints page](https://discord.com/channels/1401686577629106246/1407869050050314311) "
@@ -187,7 +119,7 @@ def create_sprint_standup_embed(project, sprint, sprint_tasks, sprint_tasks_by_s
     
     fields = []
     
-    # SPRINT BOARD SECTION (TASKS ONLY)
+    # Sprint board header
     if sprint and sprint_total > 0:
         sprint_completion = (sprint_done / sprint_total * 100) if sprint_total > 0 else 0
         
@@ -204,6 +136,7 @@ def create_sprint_standup_embed(project, sprint, sprint_tasks, sprint_tasks_by_s
             
             column_lines = []
             
+            # Show top 3 tasks per column
             for task in tasks[:3]:
                 if task is None:
                     continue
@@ -211,12 +144,14 @@ def create_sprint_standup_embed(project, sprint, sprint_tasks, sprint_tasks_by_s
                 ref = task.get('ref', '')
                 subject = task.get('subject', 'No title')[:25]
                 
+                # Get assignee
                 assigned_info = task.get('assigned_to_extra_info')
                 if assigned_info and isinstance(assigned_info, dict):
                     assigned = assigned_info.get('username', '?')
                 else:
                     assigned = '?'
                 
+                # Get user story reference if available
                 us_ref = ""
                 if task.get('user_story_extra_info'):
                     us_ref = f" (US#{task['user_story_extra_info'].get('ref', '')})"
@@ -252,216 +187,6 @@ def create_sprint_standup_embed(project, sprint, sprint_tasks, sprint_tasks_by_s
         "timestamp": datetime.now().isoformat()
     }
 
-def create_metrics_embed(project, all_stories, all_tasks, all_stories_by_status, sprint, sprint_tasks):
-    """Create SECOND embed with blockers, team workload, and metrics"""
-    
-    # Debug: Print all statuses we found
-    print("📊 DEBUG - All story statuses found:")
-    for status, stories in all_stories_by_status.items():
-        print(f"  '{status}': {len(stories)} stories")
-    
-    # Since your Kanban might be tracking tasks instead of stories, let's count both
-    # Organize all tasks by status too
-    all_tasks_by_status = {}
-    for task in all_tasks:
-        if task is None:
-            continue
-        status_info = task.get('status_extra_info')
-        if status_info and isinstance(status_info, dict):
-            status = status_info.get('name', 'Unknown')
-        else:
-            status = 'Unknown'
-        if status not in all_tasks_by_status:
-            all_tasks_by_status[status] = []
-        all_tasks_by_status[status].append(task)
-    
-    print("📊 DEBUG - All task statuses found:")
-    for status, tasks in all_tasks_by_status.items():
-        print(f"  '{status}': {len(tasks)} tasks")
-    
-    # Count items by their actual status (handle different capitalizations)
-    def get_status_count_combined(status_name):
-        """Get count for a status from both stories and tasks"""
-        story_count = (len(all_stories_by_status.get(status_name, [])) +
-                      len(all_stories_by_status.get(status_name.upper(), [])) +
-                      len(all_stories_by_status.get(status_name.lower(), [])))
-        task_count = (len(all_tasks_by_status.get(status_name, [])) +
-                     len(all_tasks_by_status.get(status_name.upper(), [])) +
-                     len(all_tasks_by_status.get(status_name.lower(), [])))
-        return story_count + task_count
-    
-    kanban_done = get_status_count_combined('Done')
-    kanban_not_started = get_status_count_combined('Not Started')
-    kanban_in_progress = get_status_count_combined('In Progress')
-    kanban_ready_test = get_status_count_combined('Ready for Test')
-    kanban_ready_review = get_status_count_combined('Ready for Review')
-    blocked_count = get_status_count_combined('Blocked')
-    
-    print(f"📊 DEBUG - Calculated counts (stories + tasks):")
-    print(f"  Done: {kanban_done}")
-    print(f"  Not Started: {kanban_not_started}")
-    print(f"  In Progress: {kanban_in_progress}")
-    print(f"  Ready for Test: {kanban_ready_test}")
-    print(f"  Ready for Review: {kanban_ready_review}")
-    print(f"  Blocked: {blocked_count}")
-    
-    # Total active items (everything not done)
-    kanban_active = kanban_not_started + kanban_in_progress + kanban_ready_test + kanban_ready_review + blocked_count
-    kanban_total = kanban_done + kanban_active
-    
-    print(f"📊 DEBUG - Final totals: {kanban_done}/{kanban_total} done")
-    
-    kanban_completion = (kanban_done / kanban_total * 100) if kanban_total > 0 else 0
-    health = "🟢" if blocked_count == 0 else "🟡" if blocked_count < 3 else "🔴"
-    
-    description = f"📋 **Overall**: {kanban_done}/{kanban_total} stories complete ({kanban_completion:.0f}%) {health}\n"
-    
-    if blocked_count > 0:
-        description += f"🚫 **{blocked_count}** blocked items\n"
-    
-    fields = []
-    
-    # BLOCKERS section if any
-    if 'Blocked' in all_stories_by_status and all_stories_by_status['Blocked']:
-        blocker_lines = []
-        for story in all_stories_by_status['Blocked'][:5]:
-            if story is None:
-                continue
-            ref = story.get('ref', '')
-            subject = story.get('subject', 'No title')[:50]
-            assigned_info = story.get('assigned_to_extra_info', {})
-            assigned = assigned_info.get('username', '?') if assigned_info else '?'
-            blocker_lines.append(f"🚨 **#{ref}** {subject} • @{assigned}")
-        
-        fields.append({
-            "name": "⚠️ BLOCKED - Needs Immediate Attention",
-            "value": "\n".join(blocker_lines),
-            "inline": False
-        })
-    
-    # TEAM WORKLOAD section
-    stories_by_user = {}
-    for story in all_stories:
-        if story is None:
-            continue
-        
-        status_info = story.get('status_extra_info', {})
-        status = status_info.get('name', '') if status_info else ''
-        if status in ['Done', 'Archived']:
-            continue
-        
-        assigned_info = story.get('assigned_to_extra_info')
-        if assigned_info and isinstance(assigned_info, dict):
-            user = assigned_info.get('username', 'unassigned')
-        else:
-            user = 'unassigned'
-        
-        if user not in stories_by_user:
-            stories_by_user[user] = []
-        stories_by_user[user].append(story)
-    
-    team_count = 0
-    for user, stories in sorted(stories_by_user.items()):
-        if user == 'unassigned':
-            continue
-        
-        team_count += 1
-        count = len(stories)
-        
-        if count <= 2:
-            workload = "🟢"
-        elif count <= 4:
-            workload = "🟡"
-        else:
-            workload = "🔴"
-        
-        status_counts = {}
-        for story in stories:
-            status_info = story.get('status_extra_info', {})
-            status = status_info.get('name', 'Unknown') if status_info else 'Unknown'
-            
-            for col_name, col_emoji in KANBAN_COLUMNS:
-                if status == col_name:
-                    status_counts[col_emoji] = status_counts.get(col_emoji, 0) + 1
-                    break
-        
-        breakdown = " ".join([f"{emoji}{cnt}" for emoji, cnt in status_counts.items()])
-        
-        fields.append({
-            "name": f"{workload} @{user}",
-            "value": f"**{count}** active\n{breakdown}",
-            "inline": True
-        })
-        
-        if team_count % 3 == 0:
-            fields.append({
-                "name": "\u200B",
-                "value": "\u200B",
-                "inline": False
-            })
-    
-    if 'unassigned' in stories_by_user:
-        count = len(stories_by_user['unassigned'])
-        fields.append({
-            "name": "⚠️ Unassigned",
-            "value": f"**{count}** stories",
-            "inline": True
-        })
-    
-    # METRICS section
-    total_tasks = len([t for t in all_tasks if t is not None])
-    completed_tasks = sum(1 for t in all_tasks if t and t.get('is_closed', False))
-    task_completion = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
-    
-    sprint_total = len([t for t in sprint_tasks if t is not None]) if sprint_tasks else 0
-    sprint_done = sum(1 for t in sprint_tasks if t and t.get('is_closed', False)) if sprint_tasks else 0
-    sprint_completion = (sprint_done / sprint_total * 100) if sprint_total > 0 else 0
-    
-    def progress_bar(percentage, length=10):
-        filled = int(percentage / 10)
-        return '█' * filled + '░' * (length - filled)
-    
-    fields.append({
-        "name": "\u200B",
-        "value": "\u200B",
-        "inline": False
-    })
-    
-    metric_fields = []
-    
-    if sprint and sprint_total > 0:
-        metric_fields.append({
-            "name": "🏃 Sprint Progress",
-            "value": f"{progress_bar(sprint_completion)}\n**{sprint_done}/{sprint_total}** tasks\n({sprint_completion:.0f}%)",
-            "inline": True
-        })
-    
-    metric_fields.extend([
-        {
-            "name": "📈 Story Progress",
-            "value": f"{progress_bar(kanban_completion)}\n**{kanban_done}/{kanban_total}** stories\n({kanban_completion:.0f}%)",
-            "inline": True
-        },
-        {
-            "name": "✓ Task Completion",
-            "value": f"{progress_bar(task_completion)}\n**{completed_tasks}/{total_tasks}** tasks\n({task_completion:.0f}%)",
-            "inline": True
-        },
-    ])
-    
-    fields.extend(metric_fields)
-    
-    return {
-        "title": "📊 Team Metrics & Workload",
-        "description": description,
-        "color": 0x3498DB,
-        "fields": fields,
-        "footer": {
-            "text": "👥 Team Workload | 📊 Velocity Metrics",
-        },
-        "timestamp": datetime.now().isoformat()
-    }
-
 def send_to_discord(embeds):
     """Send embeds to Discord via webhook"""
     response = requests.post(
@@ -482,40 +207,18 @@ def main():
         sprints = get_sprints(auth_token, project['id'])
         current_sprint = get_current_sprint(sprints)
         
-        print(f"📋 Current sprint: {current_sprint['name'] if current_sprint else 'None'}")
+        if not current_sprint:
+            print("⚠️ No active sprint found!")
+            return
         
-        # Get sprint tasks
-        sprint_tasks = []
-        if current_sprint:
-            print("📋 Fetching sprint tasks...")
-            sprint_tasks = get_tasks(auth_token, project['id'], current_sprint['id'])
+        print(f"📋 Current sprint: {current_sprint['name']}")
         
-        # Get ALL stories and tasks
-        print("📋 Fetching all stories...")
-        all_stories = get_all_user_stories(auth_token, project['id'])
+        print("📋 Fetching sprint tasks...")
+        sprint_tasks = get_sprint_tasks(auth_token, project['id'], current_sprint['id'])
         
-        print("✅ Fetching all tasks...")
-        all_tasks = get_all_tasks(auth_token, project['id'])
-        
-        print("🎨 Building standup embeds...")
-        
-        # DEBUG: Show ALL unique statuses before organizing
-        print("\n📊 DEBUG - RAW status names from ALL stories:")
-        unique_statuses = set()
-        for story in all_stories:
-            if story:
-                status_info = story.get('status_extra_info')
-                if status_info:
-                    status_name = status_info.get('name', 'NO_NAME')
-                    unique_statuses.add(f"'{status_name}'")
-        print(f"  Found these unique statuses: {sorted(unique_statuses)}")
-        print(f"  Total stories: {len([s for s in all_stories if s])}\n")
-        
-        # Organize data
+        print("🎨 Building standup embed...")
         sprint_tasks_by_status = organize_tasks_by_status(sprint_tasks)
-        all_stories_by_status = organize_stories_by_status(all_stories)
         
-        # Create the TWO embeds
         sprint_embed = create_sprint_standup_embed(
             project,
             current_sprint,
@@ -523,17 +226,8 @@ def main():
             sprint_tasks_by_status
         )
         
-        metrics_embed = create_metrics_embed(
-            project,
-            all_stories,
-            all_tasks,
-            all_stories_by_status,
-            current_sprint,
-            sprint_tasks
-        )
-        
         print("📨 Sending to Discord...")
-        send_to_discord([sprint_embed, metrics_embed])
+        send_to_discord([sprint_embed])
         
         print("✅ Standup sent successfully!")
         
