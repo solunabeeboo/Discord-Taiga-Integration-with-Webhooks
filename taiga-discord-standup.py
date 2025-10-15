@@ -70,16 +70,28 @@ def get_sprint_tasks(auth_token, project_id, milestone_id):
     return response.json()
 
 def organize_tasks_by_status(tasks):
-    """Group tasks by status"""
+    """Group tasks by status - normalize capitalization"""
     tasks_by_status = {}
     for task in tasks:
         if task is None:
             continue
         status_info = task.get('status_extra_info')
         status = status_info.get('name', 'Unknown') if status_info and isinstance(status_info, dict) else 'Unknown'
-        if status not in tasks_by_status:
-            tasks_by_status[status] = []
-        tasks_by_status[status].append(task)
+        
+        # Normalize common status names to match our SPRINT_COLUMNS
+        status_map = {
+            'not started': 'Not Started',
+            'in progress': 'In Progress',
+            'done': 'Done',
+        }
+        
+        # Try to normalize the status name
+        normalized_status = status_map.get(status.lower(), status)
+        
+        if normalized_status not in tasks_by_status:
+            tasks_by_status[normalized_status] = []
+        tasks_by_status[normalized_status].append(task)
+    
     return tasks_by_status
 
 # =============================================================================
@@ -105,27 +117,27 @@ def create_sprint_board_image(sprint_name, sprint_tasks_by_status, sprint_done, 
     
     # Load fonts
     try:
-        title_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 42)
-        header_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 28)
-        task_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
-        small_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
+        title_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 40)
+        header_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
+        task_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
+        small_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
     except:
         title_font = header_font = task_font = small_font = ImageFont.load_default()
     
     # Title
-    draw.text((40, 40), f"🏃 {sprint_name}", fill=text_color, font=title_font)
+    draw.text((40, 35), f"🏃 {sprint_name}", fill=text_color, font=title_font)
     
     # Progress
     completion = (sprint_done / sprint_total * 100) if sprint_total > 0 else 0
-    draw.text((40, 95), f"{sprint_done}/{sprint_total} tasks complete ({completion:.0f}%)", fill=text_secondary, font=small_font)
+    draw.text((40, 88), f"{sprint_done}/{sprint_total} tasks complete ({completion:.0f}%)", fill=text_secondary, font=small_font)
     
     # Progress bar
-    bar_x, bar_y, bar_width, bar_height = 40, 125, 1120, 20
-    draw.rounded_rectangle([bar_x, bar_y, bar_x + bar_width, bar_y + bar_height], radius=10, fill=(60, 63, 68))
+    bar_x, bar_y, bar_width, bar_height = 40, 115, 1120, 18
+    draw.rounded_rectangle([bar_x, bar_y, bar_x + bar_width, bar_y + bar_height], radius=9, fill=(60, 63, 68))
     if sprint_total > 0:
         fill_width = int((sprint_done / sprint_total) * bar_width)
         if fill_width > 0:
-            draw.rounded_rectangle([bar_x, bar_y, bar_x + fill_width, bar_y + bar_height], radius=10, fill=done_color)
+            draw.rounded_rectangle([bar_x, bar_y, bar_x + fill_width, bar_y + bar_height], radius=9, fill=done_color)
     
     # Columns
     columns = [
@@ -134,41 +146,50 @@ def create_sprint_board_image(sprint_name, sprint_tasks_by_status, sprint_done, 
         ('Done', '✅', done_color)
     ]
     
-    column_width, column_spacing, start_y = 360, 20, 180
+    column_width, column_spacing, start_y = 360, 20, 165
     
     for idx, (status_name, emoji, color) in enumerate(columns):
         x = 40 + (idx * (column_width + column_spacing))
         tasks = sprint_tasks_by_status.get(status_name, [])
         count = len(tasks)
         
-        # Column header
-        draw.rounded_rectangle([x, start_y, x + column_width, start_y + 60], radius=12, fill=color)
-        draw.text((x + 20, start_y + 12), f"{emoji} {status_name}", fill=(255, 255, 255), font=header_font)
-        draw.text((x + 20, start_y + 45), f"{count} tasks", fill=(255, 255, 255), font=small_font)
+        # Column header - cleaner design
+        header_height = 55
+        draw.rounded_rectangle([x, start_y, x + column_width, start_y + header_height], radius=10, fill=color)
         
-        # Task cards
-        card_y = start_y + 80
+        # Header text centered vertically
+        draw.text((x + 18, start_y + 10), f"{emoji} {status_name}", fill=(255, 255, 255), font=header_font)
+        draw.text((x + 18, start_y + 36), f"{count} tasks", fill=(255, 255, 255), font=small_font)
+        
+        # Task cards - start below header with proper spacing
+        card_y = start_y + header_height + 15
+        
         for task in tasks[:5]:
             if task is None:
                 continue
             
-            card_height = 90
+            card_height = 85
+            # Card with subtle shadow effect
             draw.rounded_rectangle([x, card_y, x + column_width, card_y + card_height], radius=8, fill=card_bg)
             
+            # Task reference - aligned nicely
             ref = task.get('ref', '?')
-            draw.text((x + 15, card_y + 12), f"#{ref}", fill=color, font=task_font)
+            draw.text((x + 15, card_y + 10), f"#{ref}", fill=color, font=task_font)
             
-            subject = task.get('subject', 'No title')[:30]
-            draw.text((x + 15, card_y + 38), subject, fill=text_color, font=small_font)
+            # Task title - proper spacing
+            subject = task.get('subject', 'No title')[:32]
+            draw.text((x + 15, card_y + 34), subject, fill=text_color, font=small_font)
             
+            # Assignee - bottom of card
             assigned_info = task.get('assigned_to_extra_info')
             assigned = assigned_info.get('username', 'Unassigned') if assigned_info and isinstance(assigned_info, dict) else 'Unassigned'
-            draw.text((x + 15, card_y + 62), f"@{assigned}", fill=text_secondary, font=small_font)
+            draw.text((x + 15, card_y + 60), f"@{assigned}", fill=text_secondary, font=small_font)
             
-            card_y += card_height + 12
+            card_y += card_height + 10
         
+        # Show "X more" if needed
         if len(tasks) > 5:
-            draw.text((x + 15, card_y), f"+{len(tasks) - 5} more tasks", fill=text_secondary, font=small_font)
+            draw.text((x + 15, card_y + 5), f"+{len(tasks) - 5} more", fill=text_secondary, font=small_font)
     
     return img
 
@@ -308,6 +329,18 @@ def main():
         
         print("📋 Fetching tasks...")
         sprint_tasks = get_sprint_tasks(auth_token, project['id'], current_sprint['id'])
+        
+        # Debug: Show all unique status names
+        print("🔍 DEBUG - Task statuses found:")
+        unique_statuses = set()
+        for task in sprint_tasks:
+            if task:
+                status_info = task.get('status_extra_info')
+                if status_info:
+                    status_name = status_info.get('name', 'NO_NAME')
+                    unique_statuses.add(f"'{status_name}'")
+        print(f"   {sorted(unique_statuses)}")
+        
         sprint_tasks_by_status = organize_tasks_by_status(sprint_tasks)
         
         sprint_done = len(sprint_tasks_by_status.get('Done', []))
