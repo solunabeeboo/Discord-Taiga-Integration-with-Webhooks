@@ -3,7 +3,7 @@ name: Daily Taiga Standup
 on:
   schedule:
     # Runs at 9 AM UTC Monday-Friday (adjust timezone as needed)
-    - cron: '0 9 * * 1-5'
+    - cron: '0 14 * * *'
   workflow_dispatch: # Allows manual trigger for testing
 
 jobs:
