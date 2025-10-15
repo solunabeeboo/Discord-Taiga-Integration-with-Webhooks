@@ -108,10 +108,10 @@ def create_sprint_standup_embed(project, sprint, sprint_tasks, sprint_tasks_by_s
     sprint_done = len(sprint_tasks_by_status.get('Done', []))
     sprint_name = sprint['name'] if sprint else 'No Active Sprint'
     
-    # Build description with team message
+    # Build description (without @everyone - we'll send that separately)
     description = f"**{datetime.now().strftime('%A, %B %d, %Y')}** • [Open Project]({project_url})\n\n"
     description += (
-        "@everyone Hey team, this is your daily reminder to head to the most recent "
+        "Hey team, this is your daily reminder to head to the most recent "
         "[Sprints page](https://discord.com/channels/1401686577629106246/1407869050050314311) "
         "and check in with the team. Please comment on the sprint post what you will get done today, "
         "or if you are too busy, just let the team know you are not available today. Thank you!"
@@ -188,10 +188,13 @@ def create_sprint_standup_embed(project, sprint, sprint_tasks, sprint_tasks_by_s
     }
 
 def send_to_discord(embeds):
-    """Send embeds to Discord via webhook"""
+    """Send embeds to Discord via webhook with @everyone ping"""
     response = requests.post(
         DISCORD_WEBHOOK,
-        json={'embeds': embeds}
+        json={
+            'content': '@everyone',  # This goes outside the embed and will ping
+            'embeds': embeds
+        }
     )
     response.raise_for_status()
 
