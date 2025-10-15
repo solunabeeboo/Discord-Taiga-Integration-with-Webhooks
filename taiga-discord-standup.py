@@ -45,10 +45,18 @@ def get_user_stories(auth_token, project_id):
 def format_standup_message(project, user_stories):
     """Format the standup message for Discord"""
     
-    # Group stories by status
+    # Filter out None values and group stories by status
     stories_by_status = {}
     for story in user_stories:
-        status = story.get('status_extra_info', {}).get('name', 'Unknown')
+        if story is None:
+            continue
+            
+        status_info = story.get('status_extra_info')
+        if status_info and isinstance(status_info, dict):
+            status = status_info.get('name', 'Unknown')
+        else:
+            status = 'Unknown'
+            
         if status not in stories_by_status:
             stories_by_status[status] = []
         stories_by_status[status].append(story)
@@ -61,14 +69,25 @@ def format_standup_message(project, user_stories):
         if stories:
             message += f"**{status}** ({len(stories)})\n"
             for story in stories[:5]:  # Limit to 5 per status to avoid huge messages
-                assigned = story.get('assigned_to_extra_info', {}).get('full_name_display', 'Unassigned')
-                message += f"  • {story['subject']} - *{assigned}*\n"
+                if story is None:
+                    continue
+                    
+                subject = story.get('subject', 'No title')
+                assigned_info = story.get('assigned_to_extra_info')
+                
+                if assigned_info and isinstance(assigned_info, dict):
+                    assigned = assigned_info.get('full_name_display', 'Unassigned')
+                else:
+                    assigned = 'Unassigned'
+                    
+                message += f"  • {subject} - *{assigned}*\n"
             if len(stories) > 5:
                 message += f"  • ... and {len(stories) - 5} more\n"
             message += "\n"
     
     # Add project link
-    message += f"\n🔗 [View Project]({project['url']})"
+    project_url = project.get('url', f"https://tree.taiga.io/project/{PROJECT_SLUG}")
+    message += f"\n🔗 [View Project]({project_url})"
     
     return message
 
