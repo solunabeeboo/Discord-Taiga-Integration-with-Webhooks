@@ -256,7 +256,13 @@ def create_metrics_embed(project, all_stories, all_tasks, all_stories_by_status,
     """Create SECOND embed with blockers, team workload, and metrics"""
     
     kanban_total = len([s for s in all_stories if s is not None])
-    kanban_done = len(all_stories_by_status.get('Done', []))
+    
+    # Count stories that are actually done (not just in "Done" status, but truly complete)
+    # Active statuses are everything except Done/Archived
+    active_statuses = ['Not Started', 'In Progress', 'Ready for Test', 'Ready for Review', 'Blocked']
+    kanban_active = sum(len(all_stories_by_status.get(status, [])) for status in active_statuses)
+    kanban_done = kanban_total - kanban_active
+    
     blocked_count = len(all_stories_by_status.get('Blocked', []))
     
     kanban_completion = (kanban_done / kanban_total * 100) if kanban_total > 0 else 0
