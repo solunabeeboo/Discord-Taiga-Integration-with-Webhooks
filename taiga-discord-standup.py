@@ -185,19 +185,16 @@ def create_sprint_standup_embed(project, sprint, sprint_tasks, sprint_tasks_by_s
         "or if you are too busy, just let the team know you are not available today. Thank you!\n\n"
     )
     
-    # Sprint info
-    if sprint:
-        sprint_completion = (sprint_done / sprint_total * 100) if sprint_total > 0 else 0
-        description += f"🏃 **{sprint_name}**: {sprint_done}/{sprint_total} tasks complete ({sprint_completion:.0f}%)\n\n"
-    
     description += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     
     fields = []
     
     # SPRINT BOARD SECTION (TASKS ONLY)
     if sprint and sprint_total > 0:
+        sprint_completion = (sprint_done / sprint_total * 100) if sprint_total > 0 else 0
+        
         fields.append({
-            "name": f"🏃 {sprint_name} (Sprint Tasks)",
+            "name": f"🏃 {sprint_name} - {sprint_done}/{sprint_total} tasks complete ({sprint_completion:.0f}%)",
             "value": f"Active sprint with **{sprint_total}** tasks",
             "inline": False
         })
