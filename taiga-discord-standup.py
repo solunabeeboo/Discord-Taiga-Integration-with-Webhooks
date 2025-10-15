@@ -255,13 +255,19 @@ def create_sprint_standup_embed(project, sprint, sprint_tasks, sprint_tasks_by_s
 def create_metrics_embed(project, all_stories, all_tasks, all_stories_by_status, sprint, sprint_tasks):
     """Create SECOND embed with blockers, team workload, and metrics"""
     
-    # Count stories by their actual status
-    kanban_done = len(all_stories_by_status.get('Done', []))
-    kanban_not_started = len(all_stories_by_status.get('Not Started', []))
-    kanban_in_progress = len(all_stories_by_status.get('In Progress', []))
-    kanban_ready_test = len(all_stories_by_status.get('Ready for Test', []))
-    kanban_ready_review = len(all_stories_by_status.get('Ready for Review', []))
-    blocked_count = len(all_stories_by_status.get('Blocked', []))
+    # Count stories by their actual status (handle different capitalizations)
+    def get_status_count(status_name):
+        """Get count for a status, checking multiple capitalizations"""
+        return (len(all_stories_by_status.get(status_name, [])) +
+                len(all_stories_by_status.get(status_name.upper(), [])) +
+                len(all_stories_by_status.get(status_name.lower(), [])))
+    
+    kanban_done = get_status_count('Done')
+    kanban_not_started = get_status_count('Not Started')
+    kanban_in_progress = get_status_count('In Progress')
+    kanban_ready_test = get_status_count('Ready for Test')
+    kanban_ready_review = get_status_count('Ready for Review')
+    blocked_count = get_status_count('Blocked')
     
     # Total active stories (everything not done)
     kanban_active = kanban_not_started + kanban_in_progress + kanban_ready_test + kanban_ready_review + blocked_count
