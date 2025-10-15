@@ -18,10 +18,8 @@ KANBAN_COLUMNS = [
     ('Done', '✅'),
 ]
 
-# Sprint/Scrum board columns
+# Sprint/Scrum board columns - only task statuses
 SPRINT_COLUMNS = [
-    ('User Story', '📖'),
-    ('Information Needed', '❓'),
     ('Not Started', '⏸️'),
     ('In Progress', '🔄'),
     ('Done', '✅'),
@@ -203,6 +201,14 @@ def create_mega_standup_embed(project, sprint, sprint_stories, all_stories, task
     sprint_name = sprint['name'] if sprint else 'No Active Sprint'
     description = f"**{datetime.now().strftime('%A, %B %d, %Y')}** • [Open Project]({project_url})\n\n"
     
+    # Add @everyone message
+    description += (
+        "@everyone Hey team, this is your daily reminder to head to the most recent "
+        "[daily standup page](https://discord.com/channels/1401686577629106246/1407869050050314311) "
+        "and check in with the team. Please comment on the sprint post what you will get done today, "
+        "or if you are too busy, just let the team know you are not available today. Thank you!\n\n"
+    )
+    
     # Sprint info
     if sprint:
         sprint_completion = (sprint_done / sprint_total * 100) if sprint_total > 0 else 0
@@ -373,11 +379,117 @@ def create_mega_standup_embed(project, sprint, sprint_stories, all_stories, task
         "timestamp": datetime.now().isoformat()
     }
 
-def send_to_discord(embed):
-    """Send single embed to Discord via webhook"""
+def create_velocity_metrics_embed(sprint, sprint_stories, all_stories, tasks):
+    """Create metrics showing team velocity and progress"""
+    
+    # Sprint metrics
+    sprint_total = len([s for s in sprint_stories if s is not None])
+    sprint_done = 0
+    sprint_in_progress = 0
+    
+    for story in sprint_stories:
+        if story is None:
+            continue
+        status_info = story.get('status_extra_info', {})
+        status = status_info.get('name', '') if status_info else ''
+        
+        if status == 'Done':
+            sprint_done += 1
+        elif status == 'In Progress':
+            sprint_in_progress += 1
+    
+    # Overall metrics
+    total_stories = len([s for s in all_stories if s is not None])
+    total_tasks = len([t for t in tasks if t is not None])
+    
+    done_stories = 0
+    blocked_stories = 0
+    completed_tasks = 0
+    
+    for story in all_stories:
+        if story is None:
+            continue
+        status_info = story.get('status_extra_info', {})
+        status = status_info.get('name', '') if status_info else ''
+        
+        if status == 'Done':
+            done_stories += 1
+        elif status == 'Blocked':
+            blocked_stories += 1
+    
+    for task in tasks:
+        if task and task.get('is_closed', False):
+            completed_tasks += 1
+    
+    # Calculate percentages
+    sprint_completion = (sprint_done / sprint_total * 100) if sprint_total > 0 else 0
+    story_completion = (done_stories / total_stories * 100) if total_stories > 0 else 0
+    task_completion = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+    
+    # Create progress bars
+    def progress_bar(percentage, length=10):
+        filled = int(percentage / 10)
+        return '█' * filled + '░' * (length - filled)
+    
+    # Health indicator
+    if blocked_stories == 0 and sprint_in_progress > 0:
+        health = "🟢 Healthy"
+    elif blocked_stories > 0 and blocked_stories < 3:
+        health = "🟡 Watch"
+    else:
+        health = "🔴 Attention Needed"
+    
+    fields = []
+    
+    # Sprint metrics if available
+    if sprint and sprint_total > 0:
+        fields.append({
+            "name": f"🏃 Sprint Progress",
+            "value": f"{progress_bar(sprint_completion)}\n**{sprint_done}** of **{sprint_total}** stories complete\n({sprint_completion:.0f}%)",
+            "inline": True
+        })
+    
+    fields.extend([
+        {
+            "name": "📈 Overall Progress",
+            "value": f"{progress_bar(story_completion)}\n**{done_stories}** of **{total_stories}** stories complete\n({story_completion:.0f}%)",
+            "inline": True
+        },
+        {
+            "name": "✓ Task Completion",
+            "value": f"{progress_bar(task_completion)}\n**{completed_tasks}** of **{total_tasks}** tasks done\n({task_completion:.0f}%)",
+            "inline": True
+        },
+        {
+            "name": "🏥 Health Status",
+            "value": f"{health}\n🔄 {sprint_in_progress} in progress\n🚫 {blocked_stories} blocked",
+            "inline": True
+        }
+    ])
+    
+    # Team message
+    description = (
+        "@everyone Hey team, this is your daily reminder to head to the most recent "
+        "[daily standup page](https://discord.com/channels/1401686577629106246/1407869050050314311) "
+        "and check in with the team. Please comment on the sprint post what you will get done today, "
+        "or if you are too busy, just let the team know you are not available today. Thank you!"
+    )
+    
+    return {
+        "title": "📊 Velocity & Metrics",
+        "description": description,
+        "color": 0x3498DB,
+        "fields": fields,
+        "footer": {
+            "text": "💬 Daily check-ins keep us aligned and moving forward together!"
+        }
+    }
+
+def send_to_discord(embeds):
+    """Send embeds to Discord via webhook"""
     response = requests.post(
         DISCORD_WEBHOOK,
-        json={'embeds': [embed]}
+        json={'embeds': embeds}
     )
     response.raise_for_status()
 
@@ -425,8 +537,8 @@ def main():
                     tasks_by_story[story_id] = []
                 tasks_by_story[story_id].append(task)
         
-        # Create the ONE mega embed
-        mega_embed = create_mega_standup_embed(
+        # Create the TWO embeds
+        main_embed = create_mega_standup_embed(
             project,
             current_sprint,
             sprint_stories,
@@ -437,8 +549,15 @@ def main():
             tasks_by_story
         )
         
+        metrics_embed = create_velocity_metrics_embed(
+            current_sprint,
+            sprint_stories,
+            all_stories,
+            tasks
+        )
+        
         print("📨 Sending to Discord...")
-        send_to_discord(mega_embed)
+        send_to_discord([main_embed, metrics_embed])
         
         print("✅ Standup sent successfully!")
         
@@ -453,7 +572,7 @@ def main():
                 "description": f"```{str(e)}```",
                 "color": 0xE74C3C
             }
-            send_to_discord(error_embed)
+            send_to_discord([error_embed])
         except:
             pass
         raise
