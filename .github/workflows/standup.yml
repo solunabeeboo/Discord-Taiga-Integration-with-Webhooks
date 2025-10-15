@@ -1,0 +1,34 @@
+name: Daily Taiga Standup
+
+on:
+  schedule:
+    # Runs at 9 AM UTC Monday-Friday (adjust timezone as needed)
+    - cron: '0 9 * * 1-5'
+  workflow_dispatch: # Allows manual trigger for testing
+
+jobs:
+  send-standup:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        pip install requests
+    
+    - name: Run standup script
+      env:
+        TAIGA_URL: 'https://api.taiga.io/api/v1'
+        TAIGA_USERNAME: ${{ secrets.TAIGA_USERNAME }}
+        TAIGA_PASSWORD: ${{ secrets.TAIGA_PASSWORD }}
+        PROJECT_SLUG: ${{ secrets.PROJECT_SLUG }}
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+      run: |
+        python taiga-discord-standup.py
