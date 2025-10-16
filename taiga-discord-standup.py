@@ -124,8 +124,8 @@ def create_sprint_board_image(sprint_name, sprint_tasks_by_status, sprint_done, 
     except:
         title_font = header_font = task_font = small_font = ImageFont.load_default()
     
-    # Title
-    draw.text((40, 35), f"🏃 {sprint_name}", fill=text_color, font=title_font)
+    # Title (remove emoji, just text)
+    draw.text((40, 35), sprint_name, fill=text_color, font=title_font)
     
     # Progress
     completion = (sprint_done / sprint_total * 100) if sprint_total > 0 else 0
@@ -139,16 +139,16 @@ def create_sprint_board_image(sprint_name, sprint_tasks_by_status, sprint_done, 
         if fill_width > 0:
             draw.rounded_rectangle([bar_x, bar_y, bar_x + fill_width, bar_y + bar_height], radius=9, fill=done_color)
     
-    # Columns
+    # Columns (remove emojis from display)
     columns = [
-        ('Not Started', '⏸️', not_started_color),
-        ('In Progress', '🔄', in_progress_color),
-        ('Done', '✅', done_color)
+        ('Not Started', not_started_color),
+        ('In Progress', in_progress_color),
+        ('Done', done_color)
     ]
     
     column_width, column_spacing, start_y = 360, 20, 165
     
-    for idx, (status_name, emoji, color) in enumerate(columns):
+    for idx, (status_name, color) in enumerate(columns):
         x = 40 + (idx * (column_width + column_spacing))
         tasks = sprint_tasks_by_status.get(status_name, [])
         count = len(tasks)
@@ -157,8 +157,8 @@ def create_sprint_board_image(sprint_name, sprint_tasks_by_status, sprint_done, 
         header_height = 55
         draw.rounded_rectangle([x, start_y, x + column_width, start_y + header_height], radius=10, fill=color)
         
-        # Header text centered vertically
-        draw.text((x + 18, start_y + 10), f"{emoji} {status_name}", fill=(255, 255, 255), font=header_font)
+        # Header text centered vertically (no emoji)
+        draw.text((x + 18, start_y + 10), status_name, fill=(255, 255, 255), font=header_font)
         draw.text((x + 18, start_y + 36), f"{count} tasks", fill=(255, 255, 255), font=small_font)
         
         # Task cards - start below header with proper spacing
@@ -257,7 +257,7 @@ def create_sprint_standup_embed(project, sprint, sprint_tasks, sprint_tasks_by_s
         fields.append({
             "name": f"🏃 {sprint_name}",
             "value": (
-                f"{progress_bar(sprint_completion)}\n"
+                #f"{progress_bar(sprint_completion)}\n"
                 f"**{sprint_done}/{sprint_total}** tasks complete ({sprint_completion:.0f}%)\n\n"
                 f"⏸️ Not Started: **{not_started}** | "
                 f"🔄 In Progress: **{in_progress}** | "
