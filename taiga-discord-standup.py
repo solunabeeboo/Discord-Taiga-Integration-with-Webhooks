@@ -112,7 +112,7 @@ def create_sprint_board_image(sprint_name, sprint_tasks_by_status, sprint_done, 
     avg_card_height = 100  # Average with some padding
     min_height = 800
     
-    calculated_height = header_section_height + column_header_height + (max_cards * avg_card_height) + 40
+    calculated_height = header_section_height + column_header_height + (max_cards * avg_card_height) + 15
     height = max(min_height, calculated_height)  # At least 800px
     
     # Colors
