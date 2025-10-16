@@ -265,7 +265,7 @@ def create_sprint_standup_embed(project, sprint, sprint_tasks, sprint_tasks_by_s
         fields.append({
             "name": f"🏃 {sprint_name}",
             "value": (
-                f"{progress_bar(sprint_completion)}\n"
+                #f"{progress_bar(sprint_completion)}\n"
                 f"**{sprint_done}/{sprint_total}** tasks complete ({sprint_completion:.0f}%)\n\n"
                 f"⏸️ Not Started: **{not_started}** | "
                 f"🔄 In Progress: **{in_progress}** | "
