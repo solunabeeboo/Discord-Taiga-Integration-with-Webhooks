@@ -99,9 +99,21 @@ def organize_tasks_by_status(tasks):
 # =============================================================================
 
 def create_sprint_board_image(sprint_name, sprint_tasks_by_status, sprint_done, sprint_total):
-    """Generate visual sprint board"""
+    """Generate visual sprint board with dynamic height"""
     
-    width, height = 1200, 800
+    width = 1200
+    
+    # Calculate required height based on max cards in any column
+    max_cards = max(len(sprint_tasks_by_status.get(status, [])) for status in ['Not Started', 'In Progress', 'Done'])
+    
+    # Estimate height needed
+    header_section_height = 160  # Title + progress bar
+    column_header_height = 55
+    avg_card_height = 100  # Average with some padding
+    min_height = 800
+    
+    calculated_height = header_section_height + column_header_height + (max_cards * avg_card_height) + 100
+    height = max(min_height, calculated_height)  # At least 800px
     
     # Colors
     bg_color = (30, 33, 36)
@@ -164,7 +176,7 @@ def create_sprint_board_image(sprint_name, sprint_tasks_by_status, sprint_done, 
         # Task cards - start below header with proper spacing
         card_y = start_y + header_height + 15
         
-        for task in tasks[:5]:
+        for task in tasks:  # Show ALL tasks, not just [:5]
             if task is None:
                 continue
             
@@ -212,10 +224,6 @@ def create_sprint_board_image(sprint_name, sprint_tasks_by_status, sprint_done, 
             draw.text((x + 15, assignee_y), f"@{assigned}", fill=text_secondary, font=small_font)
             
             card_y += card_height + 10
-        
-        # Show "X more" if needed
-        if len(tasks) > 5:
-            draw.text((x + 15, card_y + 5), f"+{len(tasks) - 5} more", fill=text_secondary, font=small_font)
     
     return img
 
@@ -257,7 +265,7 @@ def create_sprint_standup_embed(project, sprint, sprint_tasks, sprint_tasks_by_s
         fields.append({
             "name": f"🏃 {sprint_name}",
             "value": (
-                #f"{progress_bar(sprint_completion)}\n"
+                f"{progress_bar(sprint_completion)}\n"
                 f"**{sprint_done}/{sprint_total}** tasks complete ({sprint_completion:.0f}%)\n\n"
                 f"⏸️ Not Started: **{not_started}** | "
                 f"🔄 In Progress: **{in_progress}** | "
