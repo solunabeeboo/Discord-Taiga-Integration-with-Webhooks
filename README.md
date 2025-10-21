@@ -5,8 +5,8 @@ These uses a simple python script to pull a Sprint page from the Scrum board in 
 image as well as a standup message with an @everyone, feel free to edit the contents of either with the python file!
 
 <h1>Setup!</h1>
-1. Go to your Discord Server > Server Settings > Integrations > Webhooks > Create a Webhook Bot for the channel, copy and save it's URL!
-2. In your GitHub Repo, go to Settings > Scroll Down and Click Secrets and Variables > Actions
+1. Go to your Discord Server > Server Settings > Integrations > Webhooks > Create a Webhook Bot for the channel, copy and save it's URL!\n
+2. In your GitHub Repo, go to Settings > Scroll Down and Click Secrets and Variables > Actions\n
 3. Create these EXACT Secrets in the project (or create your own and edit the Python file to accomadate)
    a. DISCORD_WEBHOOK
    b. PROJECT_SLUG
