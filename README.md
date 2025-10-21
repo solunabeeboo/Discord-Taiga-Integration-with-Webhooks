@@ -22,4 +22,7 @@ TO SETUP:
 6. Have fun!
 
 
-<img width="400" height="478" alt="image" align="center" src="https://github.com/user-attachments/assets/88bcc73a-bba7-4a9b-99f9-b5f318d4fe80" />
+<h1>Example Standup</h1>
+<p align="center">
+  <img width="841" height="1006" alt="Example Standup" src="https://github.com/user-attachments/assets/d1d027ba-d380-4e18-993c-73600280d486" />
+</p>
