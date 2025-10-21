@@ -20,3 +20,6 @@ TO SETUP:
    a. Find the schedule: ... -cron: '# # # # #' to edit. Go to cronguru to find out what to put here, its a UTC based schedule.
 
 6. Have fun!
+
+
+<img width="841" height="1006" alt="image" src="https://github.com/user-attachments/assets/88bcc73a-bba7-4a9b-99f9-b5f318d4fe80" />
