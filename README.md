@@ -22,4 +22,4 @@ TO SETUP:
 6. Have fun!
 
 
-<img width="200" height="240" alt="image" align="center" src="https://github.com/user-attachments/assets/88bcc73a-bba7-4a9b-99f9-b5f318d4fe80" />
+<img width="400" height="478" alt="image" align="center" src="https://github.com/user-attachments/assets/88bcc73a-bba7-4a9b-99f9-b5f318d4fe80" />
